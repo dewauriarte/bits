@@ -120,10 +120,27 @@ export default function QuestionScreen({
             leftColumn = Array.isArray(question.opciones.left) ? question.opciones.left : [];
             rightColumn = Array.isArray(question.opciones.right) ? question.opciones.right : [];
           } else if (Array.isArray(question.opciones)) {
-            // Formato array simple - dividir por mitad
-            const half = Math.ceil(question.opciones.length / 2);
-            leftColumn = question.opciones.slice(0, half);
-            rightColumn = question.opciones.slice(half);
+            // Formato array de pares "Concepto → Relacionado"
+            // Separar cada elemento en left y right
+            question.opciones.forEach((opcion: any) => {
+              const texto = opcion.texto || opcion;
+              const parts = texto.includes('→') 
+                ? texto.split('→').map((s: string) => s.trim())
+                : texto.includes('->') 
+                ? texto.split('->').map((s: string) => s.trim())
+                : [texto, ''];
+              
+              if (parts.length >= 2) {
+                leftColumn.push({ id: String(leftColumn.length), texto: parts[0] });
+                rightColumn.push({ id: String(rightColumn.length), texto: parts[1] });
+              }
+            });
+            
+            // Mezclar la columna derecha para que no esté en orden
+            rightColumn = rightColumn
+              .map(value => ({ value, sort: Math.random() }))
+              .sort((a, b) => a.sort - b.sort)
+              .map(({ value }, index) => ({ ...value, id: String(index) }));
           }
         }
         

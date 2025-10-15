@@ -265,11 +265,21 @@ export default function EditQuizPage() {
       const tipo = questionForm.tipo ?? 'multiple_choice';
       
       // Para true_false, respuesta_correcta debe ser un string, no un array
-      let respuestaCorrecta: string | string[];
+      // Para match_pairs, debe ser un objeto { "0": "0", "1": "1", ... }
+      let respuestaCorrecta: string | string[] | Record<string, string>;
       if (tipo === 'true_false') {
         respuestaCorrecta = Array.isArray(questionForm.respuesta_correcta) 
           ? questionForm.respuesta_correcta[0] 
           : questionForm.respuesta_correcta;
+      } else if (tipo === 'match_pairs') {
+        // Para match_pairs, convertir array ["0", "1"] a objeto { "0": "0", "1": "1" }
+        const correctArray = Array.isArray(questionForm.respuesta_correcta)
+          ? questionForm.respuesta_correcta
+          : [questionForm.respuesta_correcta];
+        respuestaCorrecta = {};
+        correctArray.forEach((value, index) => {
+          (respuestaCorrecta as Record<string, string>)[String(index)] = String(index);
+        });
       } else {
         respuestaCorrecta = Array.isArray(questionForm.respuesta_correcta)
           ? questionForm.respuesta_correcta

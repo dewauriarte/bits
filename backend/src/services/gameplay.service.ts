@@ -555,7 +555,17 @@ class GameplayService {
 
       case 'match_pairs':
         // answer debe ser objeto { "0": "2", "1": "0", ... } (izquierda: derecha)
-        const correctPairs = respuestaCorrecta;
+        let correctPairs = respuestaCorrecta;
+        
+        // Retrocompatibilidad: Si es array, convertir a objeto { "0": "0", "1": "1", ... }
+        if (Array.isArray(correctPairs)) {
+          const pairsObj: Record<string, string> = {};
+          correctPairs.forEach((val, idx) => {
+            pairsObj[String(idx)] = String(idx);
+          });
+          correctPairs = pairsObj;
+        }
+        
         if (typeof answer !== 'object') return false;
         return Object.keys(correctPairs).every(leftIdx => 
           String(answer[leftIdx]) === String(correctPairs[leftIdx])
