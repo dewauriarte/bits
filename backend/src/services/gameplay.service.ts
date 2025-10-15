@@ -178,6 +178,7 @@ class GameplayService {
       media_url: question.imagen_url || question.video_url || null,
       opciones,
       timeLimit: gameState.timeLimit,
+      explicacion: question.explicacion || null, // Agregar explicación
     };
 
     // Resetear respuestas recibidas
@@ -270,10 +271,30 @@ class GameplayService {
     // Verificar respuesta correcta
     const isCorrect = this.checkAnswer(question, answer);
 
-    // Obtener player score
-    const playerScore = gameState.leaderboard.find(p => p.playerId === playerId);
+    // Obtener player score (o crear si no existe - para late joins)
+    let playerScore = gameState.leaderboard.find(p => p.playerId === playerId);
     if (!playerScore) {
-      throw new Error('Player not found in leaderboard');
+      // Player joined late - fetch from database and add to leaderboard
+      const participant = await prisma.sala_participantes.findUnique({
+        where: { id: playerId },
+      });
+      
+      if (!participant) {
+        throw new Error('Player not found in leaderboard');
+      }
+      
+      // Add to leaderboard
+      playerScore = {
+        playerId: participant.id,
+        nickname: participant.nickname || 'Anónimo',
+        avatar: participant.avatar || '👤',
+        score: 0,
+        comboStreak: 0,
+        correctAnswers: 0,
+        totalAnswered: 0,
+      };
+      gameState.leaderboard.push(playerScore);
+      console.log(`⚠️ Late join: Added ${playerScore.nickname} to leaderboard`);
     }
 
     // Calcular puntos
@@ -356,14 +377,14 @@ class GameplayService {
       totalResponses,
       correctResponses,
       accuracy: totalResponses > 0 ? Math.round((correctResponses / totalResponses) * 100) : 0,
-      leaderboard: this.getTopLeaderboard(gameState, 5),
+      leaderboard: this.getTopLeaderboard(gameState, 10), // Top 10 para mejor visualización
     };
 
     // Broadcast resultados
     this.io?.to(`game:${roomCode}`).emit('question:results', stats);
 
-    // Esperar 5 segundos
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Esperar 8 segundos (4s feedback + 4s leaderboard)
+    await new Promise(resolve => setTimeout(resolve, 8000));
 
     // Avanzar a siguiente pregunta
     gameState.currentQuestionIndex++;
@@ -433,13 +454,24 @@ class GameplayService {
     });
 
     // Actualizar estado de la sala en BD
-    await prisma.salas.update({
+    const sala = await prisma.salas.update({
       where: { codigo: roomCode },
       data: {
         estado: 'finalizado',
         fecha_fin: new Date(),
       },
+      select: { quiz_id: true },
     });
+
+    // Incrementar veces_jugado del quiz
+    if (sala.quiz_id) {
+      await prisma.quizzes.update({
+        where: { id: sala.quiz_id },
+        data: {
+          veces_jugado: { increment: 1 },
+        },
+      });
+    }
 
     // Limpiar estado del juego
     this.activeGames.delete(roomCode);
@@ -453,40 +485,69 @@ class GameplayService {
    */
   private checkAnswer(question: any, answer: any): boolean {
     const tipo = question.tipo;
+    
+    // Parse respuesta_correcta si es string JSON
+    let respuestaCorrecta = question.respuesta_correcta;
+    if (typeof respuestaCorrecta === 'string') {
+      try {
+        respuestaCorrecta = JSON.parse(respuestaCorrecta);
+      } catch (e) {
+        // Si no es JSON válido, dejar como string
+      }
+    }
 
     switch (tipo) {
       case 'multiple_choice':
       case 'true_false':
         // respuesta_correcta es un array con los índices correctos
-        const correctIndices = question.respuesta_correcta;
-        return correctIndices.includes(answer.toString());
+        const correctIndices = Array.isArray(respuestaCorrecta) ? respuestaCorrecta : [respuestaCorrecta];
+        const answerStr = String(answer);
+        
+        // Normalizar correctIndices a strings para evitar problemas de tipo
+        const correctIndicesStr = correctIndices.map(x => String(x));
+        
+        // Log para debug de verdadero/falso
+        if (tipo === 'true_false') {
+          console.log('🔍 True/False validation:', {
+            respuesta_correcta: respuestaCorrecta,
+            correctIndices,
+            correctIndicesStr,
+            answer,
+            answerStr,
+            result: correctIndicesStr.includes(answerStr),
+          });
+        }
+        
+        return correctIndicesStr.includes(answerStr);
 
       case 'multiple_select':
         // answer debe ser array con los índices seleccionados
-        const correctMultiple = new Set(question.respuesta_correcta as string[]);
+        const correctMultiple = new Set(Array.isArray(respuestaCorrecta) ? respuestaCorrecta.map(String) : [String(respuestaCorrecta)]);
         const userAnswer = new Set(Array.isArray(answer) ? answer.map(String) : [String(answer)]);
         return correctMultiple.size === userAnswer.size && 
                [...correctMultiple].every(idx => userAnswer.has(idx));
 
       case 'short_answer':
-        // Comparación sin mayúsculas
-        const correctText = question.respuesta_correcta.toLowerCase().trim();
+        // Comparación sin mayúsculas - respuesta_correcta puede ser string o array con una respuesta
+        const correctText = Array.isArray(respuestaCorrecta) 
+          ? String(respuestaCorrecta[0]).toLowerCase().trim()
+          : String(respuestaCorrecta).toLowerCase().trim();
         const userText = String(answer).toLowerCase().trim();
         return correctText === userText;
 
       case 'fill_blanks':
         // answer debe ser array con las respuestas de cada blank
-        const correctBlanks = question.respuesta_correcta;
+        const correctBlanks = Array.isArray(respuestaCorrecta) ? respuestaCorrecta : [respuestaCorrecta];
         if (!Array.isArray(answer) || answer.length !== correctBlanks.length) {
           return false;
         }
         return answer.every((ans: string, i: number) => 
-          ans.toLowerCase().trim() === correctBlanks[i].toLowerCase().trim()
+          String(ans).toLowerCase().trim() === String(correctBlanks[i]).toLowerCase().trim()
         );
 
       case 'order_sequence':
         // answer debe ser array con el orden correcto de índices
-        const correctOrder = question.respuesta_correcta;
+        const correctOrder = Array.isArray(respuestaCorrecta) ? respuestaCorrecta : [respuestaCorrecta];
         if (!Array.isArray(answer) || answer.length !== correctOrder.length) {
           return false;
         }
@@ -494,7 +555,7 @@ class GameplayService {
 
       case 'match_pairs':
         // answer debe ser objeto { "0": "2", "1": "0", ... } (izquierda: derecha)
-        const correctPairs = question.respuesta_correcta;
+        const correctPairs = respuestaCorrecta;
         if (typeof answer !== 'object') return false;
         return Object.keys(correctPairs).every(leftIdx => 
           String(answer[leftIdx]) === String(correctPairs[leftIdx])

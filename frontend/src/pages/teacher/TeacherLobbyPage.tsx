@@ -92,21 +92,23 @@ export default function TeacherLobbyPage() {
       let playerData: any = null;
       let userIsTeacher = false;
       
-      if (!isAnonymousStudent) {
-        // Intentar obtener estado completo (solo profesores pueden)
-        try {
-          roomData = await roomsApi.getRoomFullState(code!);
-          userIsTeacher = true;
-          setIsTeacher(true);
-          setRoom(roomData.room);
-        } catch (error) {
-          // Error al obtener como profesor
+      // SIEMPRE intentar primero como profesor
+      try {
+        roomData = await roomsApi.getRoomFullState(code!);
+        userIsTeacher = true;
+        setIsTeacher(true);
+        setRoom(roomData.room);
+        console.log('✅ Authenticated as teacher');
+      } catch (error) {
+        // No es profesor, intentar como estudiante
+        if (!isAnonymousStudent) {
           toast.error('No tienes permiso para acceder a esta sala');
           navigate('/student/join');
           return;
         }
-      } else {
-        // Es estudiante - obtener datos guardados
+        
+        // Continuar como estudiante
+        console.log('📝 Not a teacher, loading as student');
         userIsTeacher = false;
         setIsTeacher(false);
         
@@ -123,20 +125,15 @@ export default function TeacherLobbyPage() {
 
       // Unirse según rol
       if (userIsTeacher) {
-        gameSocket.joinRoom(
-          {
-            roomCode: code!,
-            nickname: roomData.room.teacherName,
-            avatar: '👨‍🏫',
-          },
-          (response) => {
-            if (!response.success) {
-              toast.error('Error al unirse', {
-                description: response.message,
-              });
+        // El profesor se une al room de socket directamente sin registrarse como jugador
+        const socket = gameSocket.getSocket();
+        if (socket) {
+          socket.emit('teacher:join', { roomCode: code }, (response: any) => {
+            if (response?.success) {
+              console.log('👨‍🏫 Profesor conectado en modo observador');
             }
-          }
-        );
+          });
+        }
       } else {
         // Unirse como estudiante
         gameSocket.joinRoom(
@@ -202,6 +199,9 @@ export default function TeacherLobbyPage() {
     // Player joined
     gameSocket.onPlayerJoined((data) => {
       console.log('Player joined:', data);
+      
+      // No actualizar aquí - dejar que room:updated maneje la actualización
+      // Solo notificar
       addEvent(`${data.player.nickname} se unió`);
       toast.success(`${data.player.nickname} se unió a la sala`);
     });
@@ -226,8 +226,23 @@ export default function TeacherLobbyPage() {
 
     // Room updated
     gameSocket.onRoomUpdated((data) => {
-      console.log('Room updated:', data);
-      setRoom(data.room);
+      console.log('Room updated - Players count:', data.room.players.length);
+      
+      // Filtrar jugadores duplicados por ID
+      const uniquePlayers = data.room.players.filter((player: any, index: number, self: any[]) => 
+        index === self.findIndex((p) => p.id === player.id)
+      );
+      
+      console.log('After dedup:', uniquePlayers.length);
+      
+      if (uniquePlayers.length !== data.room.players.length) {
+        console.warn('⚠️ Removed', data.room.players.length - uniquePlayers.length, 'duplicate players');
+      }
+      
+      setRoom({
+        ...data.room,
+        players: uniquePlayers,
+      });
     });
 
     // Game starting
@@ -245,11 +260,26 @@ export default function TeacherLobbyPage() {
     // Game started
     gameSocket.onGameStarted((data) => {
       console.log('Game started:', data);
+      
+      // Determinar rol desde localStorage/sessionStorage en el momento de navegar
+      const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+      const sessionType = localStorage.getItem('session_type');
+      const userIsTeacher = token && !token.startsWith('temp_') && sessionType !== 'anonymous';
+      
+      console.log('Token:', token?.substring(0, 10) + '...');
+      console.log('Session type:', sessionType);
+      console.log('Determined is teacher?', userIsTeacher);
+      console.log('Room code:', code);
+      
       toast.success('¡El juego ha comenzado!');
       setTimeout(() => {
-        // TODO: Navigate to game play
-        toast.info('Gameplay pendiente de implementar (Sprint 5)');
-      }, 1000);
+        // Navigate to game play
+        const targetPath = userIsTeacher 
+          ? `/teacher/rooms/${code}/control`
+          : `/game/${code}/play`;
+        console.log('Navigating to:', targetPath);
+        navigate(targetPath);
+      }, 500);
     });
 
     // Game cancelled
@@ -493,6 +523,26 @@ export default function TeacherLobbyPage() {
                 )}
               </CardHeader>
               <CardContent>
+                {/* Profesor */}
+                {isTeacher && (
+                  <div className="mb-6 pb-6 border-b">
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                      <span>👨‍🏫</span> Profesor
+                    </h3>
+                    <div className="p-4 rounded-lg border-2 border-primary bg-primary/5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-primary/10 border-2 border-primary">
+                          👨‍🏫
+                        </div>
+                        <div>
+                          <p className="font-semibold">{room.teacherName}</p>
+                          <p className="text-xs text-muted-foreground">Anfitrión</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 <PlayerGrid players={room.players} />
               </CardContent>
             </Card>

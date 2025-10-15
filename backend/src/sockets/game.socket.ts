@@ -12,6 +12,58 @@ export function setupGameSocketHandlers(io: SocketIOServer) {
     console.log(`🎮 Game socket connected: ${socket.id}`);
 
     /**
+     * Evento: teacher:join - Profesor se une a la sala como observador
+     */
+    socket.on('teacher:join', async (payload: { roomCode: string }, callback) => {
+      try {
+        const { roomCode } = payload;
+        const teacherId = socket.userId;
+
+        if (!teacherId) {
+          return callback?.({
+            success: false,
+            message: 'No autenticado',
+          });
+        }
+
+        // Validar que la sala existe
+        const room = await roomManager.getRoomState(roomCode);
+        if (!room) {
+          return callback?.({
+            success: false,
+            message: 'Sala no encontrada',
+          });
+        }
+
+        // Validar que es el profesor de esta sala
+        if (room.teacherId !== teacherId) {
+          return callback?.({
+            success: false,
+            message: 'No eres el profesor de esta sala',
+          });
+        }
+
+        // Unir socket al room sin agregarlo como jugador
+        await socket.join(`game:${roomCode}`);
+        (socket as any).currentRoom = roomCode;
+        (socket as any).isTeacher = true;
+
+        callback?.({
+          success: true,
+          data: { room },
+        });
+
+        console.log(`👨‍🏫 Teacher joined room ${roomCode} as observer`);
+      } catch (error: any) {
+        console.error('Error teacher joining:', error);
+        callback?.({
+          success: false,
+          message: error.message || 'Error al unirse',
+        });
+      }
+    });
+
+    /**
      * Evento: game:join - Estudiante se une a la sala
      */
     socket.on('game:join', async (payload: JoinRoomPayload, callback) => {

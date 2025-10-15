@@ -270,7 +270,19 @@ class RoomManager {
       }
     }
 
-    // Verificar si el jugador ya existe por nickname (reconexión)
+    // Buscar sala en BD primero (necesaria para verificaciones posteriores)
+    const sala = await prisma.salas.findUnique({
+      where: { codigo: roomCode },
+    });
+
+    if (!sala) {
+      throw new Error('Sala no encontrada en BD');
+    }
+
+    // Validar userId: si es token temporal, usar null
+    const validUserId = userId && !userId.startsWith('temp_') ? userId : null;
+
+    // Verificar si el jugador ya existe por nickname (reconexión o duplicado)
     const existingPlayer = room.players.find(
       (p) => p.nickname.toLowerCase().trim() === nickname.toLowerCase().trim()
     );
@@ -280,8 +292,34 @@ class RoomManager {
       existingPlayer.isConnected = true;
       this.rooms.set(roomCode, room);
       await redis.set(`room:${roomCode}`, JSON.stringify(room), 'EX', 3600 * 4);
-      console.log(`✅ Player ${nickname} reconnected to room ${roomCode}`);
+      console.log(`✅ Player ${nickname} reconnected to room ${roomCode} (prevented duplicate)`);
       return { player: existingPlayer, isReconnect: true };
+    }
+
+    // Verificar TAMBIÉN en BD antes de crear nuevo registro
+    const existingInDBByNickname = await prisma.sala_participantes.findFirst({
+      where: {
+        sala_id: sala.id,
+        nickname: nickname.trim(),
+      },
+    });
+
+    if (existingInDBByNickname) {
+      // Ya existe en BD, usar ese registro y agregarlo a memoria
+      const player: PlayerInfo = {
+        id: existingInDBByNickname.id,
+        userId: validUserId || undefined,
+        nickname: nickname.trim(),
+        avatar: avatar || '👤',
+        isReady: false,
+        isConnected: true,
+        joinedAt: new Date(),
+      };
+      room.players.push(player);
+      this.rooms.set(roomCode, room);
+      await redis.set(`room:${roomCode}`, JSON.stringify(room), 'EX', 3600 * 4);
+      console.log(`✅ Player ${nickname} loaded from DB (prevented duplicate insertion)`);
+      return { player, isReconnect: true };
     }
 
     // Nuevo jugador - solo permitir en lobby o si allowLateJoin está activado
@@ -295,40 +333,8 @@ class RoomManager {
       throw new Error('La sala está llena');
     }
 
-    // Buscar sala en BD
-    const sala = await prisma.salas.findUnique({
-      where: { codigo: roomCode },
-    });
-
-    if (!sala) {
-      throw new Error('Sala no encontrada en BD');
-    }
-
-    // Validar userId: si es token temporal, usar null
-    const validUserId = userId && !userId.startsWith('temp_') ? userId : null;
-
-    // Verificar si ya existe en BD (prevenir duplicados)
-    const existingInDB = await prisma.sala_participantes.findFirst({
-      where: {
-        sala_id: sala.id,
-        nickname: nickname.trim(),
-      },
-    });
-
-    let participante;
-    if (existingInDB) {
-      // Actualizar existente
-      participante = await prisma.sala_participantes.update({
-        where: { id: existingInDB.id },
-        data: {
-          estado: 'conectado',
-          avatar: avatar || '👤',
-        },
-      });
-      console.log(`✅ Player ${nickname} reconnected via DB to room ${roomCode}`);
-    } else {
-      // Crear participante en BD
-      participante = await prisma.sala_participantes.create({
+    // Crear nuevo participante en BD (ya verificamos que no existe)
+    const participante = await prisma.sala_participantes.create({
         data: {
           sala_id: sala.id,
           usuario_id: validUserId,
@@ -338,7 +344,6 @@ class RoomManager {
         },
       });
       console.log(`✅ Player ${nickname} created in room ${roomCode}`);
-    }
 
     // Agregar a memoria solo si no existe
     const existingInMemory = room.players.find(p => p.id === participante.id);
@@ -451,7 +456,7 @@ class RoomManager {
     await prisma.salas.update({
       where: { codigo: roomCode },
       data: {
-        estado: 'iniciando',
+        estado: 'en_curso',
         fecha_inicio: new Date(),
       },
     });
@@ -476,7 +481,7 @@ class RoomManager {
 
     await prisma.salas.update({
       where: { codigo: roomCode },
-      data: { estado: 'activo' },
+      data: { estado: 'en_curso' },
     });
 
     this.rooms.set(roomCode, room);
@@ -547,9 +552,7 @@ class RoomManager {
     switch (estado) {
       case 'esperando':
         return 'lobby';
-      case 'iniciando':
-        return 'starting';
-      case 'activo':
+      case 'en_curso':
         return 'active';
       case 'pausado':
         return 'paused';

@@ -36,6 +36,7 @@ export const JoinByLinkPage = () => {
         }
         
         // Si llegamos aquí, es sala abierta -> ir a personalización
+        console.log('🔄 Redirecting to customize page for open room:', uppercaseCode);
         navigate(`/join/${uppercaseCode}/customize`, { replace: true });
       } catch (error) {
         console.error('Error checking room type:', error);
