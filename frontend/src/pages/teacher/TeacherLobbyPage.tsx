@@ -493,14 +493,17 @@ export default function TeacherLobbyPage() {
             </div>
           </div>
 
-          <Button
-            variant="destructive"
-            onClick={() => setShowCloseDialog(true)}
-            className="gap-2"
-          >
-            <X className="h-4 w-4" />
-            Cerrar Sala
-          </Button>
+          {/* Botón de Cerrar Sala - Solo para profesor */}
+          {isTeacher && (
+            <Button
+              variant="destructive"
+              onClick={() => setShowCloseDialog(true)}
+              className="gap-2"
+            >
+              <X className="h-4 w-4" />
+              Cerrar Sala
+            </Button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

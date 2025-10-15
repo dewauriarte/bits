@@ -76,7 +76,7 @@ export interface CreateQuestionInput {
   audio_url?: string | null;
   tipo?: QuestionType;
   opciones: { texto: string; imagen_url?: string }[];
-  respuesta_correcta: string | string[];
+  respuesta_correcta: string | string[] | Record<string, string>; // string para true_false, array para otros, objeto para match_pairs
   puntos?: number;
   tiempo_limite?: number;
   explicacion?: string;

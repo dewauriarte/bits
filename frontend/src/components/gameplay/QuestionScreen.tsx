@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -109,43 +110,47 @@ export default function QuestionScreen({
         );
 
       case 'match_pairs':
-        // Verificar si opciones tiene estructura left/right
-        console.log('🔗 Match pairs opciones:', question.opciones);
-        let leftColumn: any[] = [];
-        let rightColumn: any[] = [];
-        
-        if (question.opciones && typeof question.opciones === 'object') {
-          if ('left' in question.opciones && 'right' in question.opciones) {
-            // Formato estructurado { left: [...], right: [...] }
-            leftColumn = Array.isArray(question.opciones.left) ? question.opciones.left : [];
-            rightColumn = Array.isArray(question.opciones.right) ? question.opciones.right : [];
-          } else if (Array.isArray(question.opciones)) {
-            // Formato array de pares "Concepto → Relacionado"
-            // Separar cada elemento en left y right
-            question.opciones.forEach((opcion: any) => {
-              const texto = opcion.texto || opcion;
-              const parts = texto.includes('→') 
-                ? texto.split('→').map((s: string) => s.trim())
-                : texto.includes('->') 
-                ? texto.split('->').map((s: string) => s.trim())
-                : [texto, ''];
+        // Usar useMemo para evitar re-mezclar en cada render
+        const { leftColumn, rightColumn } = useMemo(() => {
+          console.log('🔗 Match pairs opciones:', question.opciones);
+          let left: any[] = [];
+          let right: any[] = [];
+          
+          if (question.opciones && typeof question.opciones === 'object') {
+            if ('left' in question.opciones && 'right' in question.opciones) {
+              // Formato estructurado { left: [...], right: [...] }
+              left = Array.isArray(question.opciones.left) ? question.opciones.left : [];
+              right = Array.isArray(question.opciones.right) ? question.opciones.right : [];
+            } else if (Array.isArray(question.opciones)) {
+              // Formato array de pares "Concepto → Relacionado"
+              // Separar cada elemento en left y right
+              question.opciones.forEach((opcion: any) => {
+                const texto = opcion.texto || opcion;
+                const parts = texto.includes('→') 
+                  ? texto.split('→').map((s: string) => s.trim())
+                  : texto.includes('->') 
+                  ? texto.split('->').map((s: string) => s.trim())
+                  : [texto, ''];
+                
+                if (parts.length >= 2) {
+                  left.push({ id: String(left.length), texto: parts[0] });
+                  right.push({ id: String(right.length), texto: parts[1] });
+                }
+              });
               
-              if (parts.length >= 2) {
-                leftColumn.push({ id: String(leftColumn.length), texto: parts[0] });
-                rightColumn.push({ id: String(rightColumn.length), texto: parts[1] });
-              }
-            });
-            
-            // Mezclar la columna derecha para que no esté en orden
-            rightColumn = rightColumn
-              .map(value => ({ value, sort: Math.random() }))
-              .sort((a, b) => a.sort - b.sort)
-              .map(({ value }, index) => ({ ...value, id: String(index) }));
+              // Mezclar la columna derecha para que no esté en orden (SOLO UNA VEZ)
+              right = right
+                .map(value => ({ value, sort: Math.random() }))
+                .sort((a, b) => a.sort - b.sort)
+                .map(({ value }, index) => ({ ...value, id: String(index) }));
+            }
           }
-        }
-        
-        console.log('🔗 Left column:', leftColumn);
-        console.log('🔗 Right column:', rightColumn);
+          
+          console.log('🔗 Left column:', left);
+          console.log('🔗 Right column:', right);
+          
+          return { leftColumn: left, rightColumn: right };
+        }, [question.questionId]); // Solo re-calcular cuando cambie la pregunta
         
         return (
           <MatchPairs

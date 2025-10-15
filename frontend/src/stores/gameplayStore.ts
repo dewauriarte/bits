@@ -246,9 +246,21 @@ export const useGameplayStore = create<GameplayStore>((set, get) => ({
     });
 
     // game:closed - Juego cerrado por el profesor
-    socket.on('game:closed', () => {
+    socket.on('game:closed', (data: any) => {
       console.log('❌ Game closed by teacher');
-      set({ gameState: 'waiting' });
+      const message = data?.message || 'El profesor ha cerrado la sala';
+      
+      // Import dinámico para evitar problemas circulares
+      import('sonner').then(({ toast }) => {
+        toast.warning(message, { duration: 5000 });
+      });
+      
+      // Navegar a student join después de 2 segundos
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          window.location.href = '/student/join';
+        }
+      }, 2000);
     });
 
     // error - Manejo de errores
