@@ -44,6 +44,14 @@ router.delete('/:id', quizController.deleteQuiz.bind(quizController));
 router.post('/:id/publish', quizController.publishQuiz.bind(quizController));
 
 // CRUD Preguntas
+
+// Reordenar preguntas (DEBE estar ANTES de las rutas parametrizadas)
+router.put(
+  '/:id/questions/reorder',
+  validateBody(reorderQuestionsSchema),
+  quizController.reorderQuestions.bind(quizController)
+);
+
 router.post(
   '/:id/questions',
   validateBody(createQuestionSchema),
@@ -59,13 +67,6 @@ router.put(
 router.delete(
   '/:quizId/questions/:questionId',
   quizController.deleteQuestion.bind(quizController)
-);
-
-// Reordenar preguntas
-router.put(
-  '/:id/questions/reorder',
-  validateBody(reorderQuestionsSchema),
-  quizController.reorderQuestions.bind(quizController)
 );
 
 export default router;

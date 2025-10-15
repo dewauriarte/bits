@@ -37,12 +37,15 @@ export const AvatarLoginPage = () => {
     try {
       const result = await studentAuthApi.getClassAvatars(class_id);
       
-      if (result.success) {
+      if (result.success && result.data?.avatars) {
         setAvatars(result.data.avatars);
+      } else {
+        setAvatars([]);
+        toast.error('No se pudieron cargar los avatares');
       }
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Error al cargar avatares');
-      navigate('/student/join');
+      setAvatars([]);
     } finally {
       setIsLoading(false);
     }

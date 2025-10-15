@@ -305,16 +305,16 @@ model preguntas {
   quiz_id                 String?                   @db.Uuid
   orden                   Int
   texto                   String
-  imagen_url              String?                   @db.VarChar(255)
-  video_url               String?                   @db.VarChar(255)
-  audio_url               String?                   @db.VarChar(255)
+  imagen_url              String?                   @db.Text
+  video_url               String?                   @db.Text
+  audio_url               String?                   @db.Text
   tipo                    String?                   @default("multiple_choice") @db.VarChar(30)
   opciones                Json
   respuesta_correcta      Json?
   puntos                  Int?                      @default(1000)
   tiempo_limite           Int?                      @default(20)
   explicacion             String?
-  imagen_explicacion      String?                   @db.VarChar(255)
+  imagen_explicacion      String?                   @db.Text
   veces_respondida        Int?                      @default(0)
   veces_correcta          Int?                      @default(0)
   fecha_creacion          DateTime?                 @default(now()) @db.Timestamp(6)
@@ -352,7 +352,7 @@ model quizzes {
   grado_id                  String?     @db.Uuid
   tags                      String[]
   palabras_clave            String[]
-  imagen_portada            String?     @db.VarChar(255)
+  imagen_portada            String?     @db.Text
   tipo_quiz                 String?     @default("kahoot") @db.VarChar(30)
   dificultad                String?     @db.VarChar(20)
   puntos_base               Int?        @default(1000)

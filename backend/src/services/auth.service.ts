@@ -88,6 +88,8 @@ export class AuthService {
   }
 
   async login(data: LoginInput) {
+    console.log('🔐 Intentando login:', data.username);
+    
     // Buscar usuario por username o email
     const usuario = await prisma.usuarios.findFirst({
       where: {
@@ -102,11 +104,15 @@ export class AuthService {
     });
 
     if (!usuario) {
+      console.log('❌ Usuario no encontrado:', data.username);
       throw new Error('Credenciales inválidas');
     }
 
+    console.log('✅ Usuario encontrado:', usuario.username, '| Estado:', usuario.estado);
+
     // Verificar estado
     if (usuario.estado !== 'activo') {
+      console.log('❌ Cuenta no activa:', usuario.estado);
       throw new Error('Cuenta inactiva o suspendida');
     }
 
@@ -114,8 +120,11 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(data.password, usuario.password_hash);
 
     if (!isPasswordValid) {
+      console.log('❌ Password inválido');
       throw new Error('Credenciales inválidas');
     }
+
+    console.log('✅ Password correcto');
 
     // Actualizar último login
     await prisma.usuarios.update({

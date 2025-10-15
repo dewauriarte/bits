@@ -1,10 +1,12 @@
 import { Server as SocketIOServer } from 'socket.io';
-import { AuthenticatedSocket, JoinRoomPayload, PlayerReadyPayload, StartGamePayload } from '../types/socket.types';
+import { AuthenticatedSocket, JoinRoomPayload, PlayerReadyPayload, StartGamePayload, AnswerSubmitPayload } from '../types/socket.types';
 import roomManager from '../services/room.service';
+import gameplayService from '../services/gameplay.service';
 
 export function setupGameSocketHandlers(io: SocketIOServer) {
-  // Configurar RoomManager con IO
+  // Configurar RoomManager y GameplayService con IO
   roomManager.setIO(io);
+  gameplayService.setIO(io);
 
   io.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`🎮 Game socket connected: ${socket.id}`);
@@ -178,6 +180,15 @@ export function setupGameSocketHandlers(io: SocketIOServer) {
           message: 'El juego ha comenzado',
         });
 
+        // Inicializar gameplay (cargar preguntas)
+        await gameplayService.initializeGame(roomCode, room.quizId, room.config.timePerQuestion || 20);
+
+        // Esperar 2 segundos antes de enviar primera pregunta
+        await sleep(2000);
+
+        // Enviar primera pregunta
+        await gameplayService.sendQuestion(roomCode);
+
         callback?.({
           success: true,
           message: 'Juego iniciado',
@@ -292,6 +303,53 @@ export function setupGameSocketHandlers(io: SocketIOServer) {
         }
       } catch (error) {
         console.error('Error handling disconnect:', error);
+      }
+    });
+
+    /**
+     * Evento: answer:submit - Jugador envía una respuesta
+     */
+    socket.on('answer:submit', async (payload: AnswerSubmitPayload, callback) => {
+      try {
+        const { roomCode, questionId, answer, timeTaken } = payload;
+        const playerId = (socket as any).playerId;
+
+        if (!playerId) {
+          return callback?.({
+            success: false,
+            message: 'No estás en ninguna sala',
+          });
+        }
+
+        // Procesar respuesta
+        const result = await gameplayService.processAnswer({
+          playerId,
+          questionId,
+          answer,
+          timeTaken,
+        });
+
+        // Obtener player score actualizado
+        const gameState = await gameplayService.loadGameStateFromRedis(roomCode);
+        const playerScore = gameState?.leaderboard.find(p => p.playerId === playerId);
+
+        // Enviar resultado al jugador
+        callback?.({
+          success: true,
+          data: {
+            ...result,
+            newScore: playerScore?.score || 0,
+            newRank: playerScore?.rank || 0,
+          },
+        });
+
+        console.log(`✅ Answer processed for player ${playerId}: ${result.isCorrect ? 'Correct' : 'Wrong'} (+${result.points} points)`);
+      } catch (error: any) {
+        console.error('Error processing answer:', error);
+        callback?.({
+          success: false,
+          message: error.message || 'Error al procesar respuesta',
+        });
       }
     });
 

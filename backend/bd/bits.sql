@@ -320,8 +320,8 @@ CREATE TABLE preguntas (
   -- Tipo y configuración
   tipo VARCHAR(30) CHECK (tipo IN (
     'multiple_choice', 'multiple_select', 'true_false',
-    'short_answer', 'fill_blank', 'order_sequence',
-    'match_columns'
+    'short_answer', 'fill_blanks', 'order_sequence',
+    'match_pairs'
   )) DEFAULT 'multiple_choice',
 
   -- Opciones y respuestas

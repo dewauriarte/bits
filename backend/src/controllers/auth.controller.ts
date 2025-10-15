@@ -32,6 +32,7 @@ export class AuthController {
         data: result,
       });
     } catch (error) {
+      console.error('❌ Login error:', error instanceof Error ? error.message : error);
       res.status(401).json({
         success: false,
         message: error instanceof Error ? error.message : 'Error al iniciar sesión',

@@ -55,3 +55,83 @@ export interface CountdownEvent {
   count: number;
   message: string;
 }
+
+// ========== Gameplay Events ==========
+
+export interface AnswerSubmitPayload {
+  roomCode: string;
+  questionId: string;
+  answer: any; // string | number | array | object dependiendo del tipo de pregunta
+  timeTaken: number; // tiempo en segundos
+}
+
+export interface AnswerResult {
+  isCorrect: boolean;
+  correctAnswer: any;
+  points: number;
+  breakdown: {
+    basePoints: number;
+    speedBonus: number;
+    comboMultiplier: number;
+  };
+  comboStreak: number;
+  newScore: number;
+  newRank: number;
+}
+
+export interface QuestionData {
+  questionNumber: number;
+  totalQuestions: number;
+  questionId: string;
+  texto: string;
+  tipo: string;
+  media_url?: string;
+  opciones: Array<{
+    id: string;
+    texto: string;
+  }>;
+  timeLimit: number;
+}
+
+export interface LeaderboardUpdate {
+  leaderboard: Array<{
+    playerId: string;
+    nickname: string;
+    avatar: string;
+    score: number;
+    rank: number;
+    comboStreak: number;
+  }>;
+  answersCount: number;
+  totalPlayers: number;
+}
+
+export interface QuestionResults {
+  questionId: string;
+  questionText: string;
+  correctAnswer: any;
+  totalResponses: number;
+  correctResponses: number;
+  accuracy: number;
+  leaderboard: any[];
+}
+
+export interface GameFinished {
+  leaderboard: Array<{
+    playerId: string;
+    nickname: string;
+    avatar: string;
+    score: number;
+    rank: number;
+    correctAnswers: number;
+    totalAnswered: number;
+    accuracy: number;
+    rewards: {
+      xp: number;
+      coins: number;
+      gems: number;
+      trophies: number;
+    };
+  }>;
+  totalQuestions: number;
+}

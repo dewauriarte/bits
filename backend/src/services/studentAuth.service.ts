@@ -507,7 +507,7 @@ export class StudentAuthService {
     // Validar que classId sea un UUID válido
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!classId || !uuidRegex.test(classId)) {
-      return [];
+      throw new Error('ID de clase inválido');
     }
 
     const clase = await prisma.clases.findUnique({

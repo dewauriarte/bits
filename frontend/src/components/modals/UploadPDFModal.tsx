@@ -31,6 +31,7 @@ export default function UploadPDFModal({ open, onClose, grados = [], materias = 
     dificultad: 'medio' as 'facil' | 'medio' | 'dificil',
     tipo_quiz: 'kahoot' as 'kahoot' | 'mario_party' | 'duelo',
     tiempo_por_pregunta: 20,
+    question_types: [] as string[],
   });
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -92,23 +93,16 @@ export default function UploadPDFModal({ open, onClose, grados = [], materias = 
       data.append('dificultad', formData.dificultad);
       data.append('tipo_quiz', formData.tipo_quiz);
       data.append('tiempo_por_pregunta', formData.tiempo_por_pregunta.toString());
+      
+      // Solo agregar question_types si hay tipos seleccionados
+      if (formData.question_types.length > 0) {
+        data.append('question_types', JSON.stringify(formData.question_types));
+      }
 
       // Simular progreso
       const progressInterval = setInterval(() => {
         setProgress((prev) => Math.min(prev + 10, 90));
       }, 500);
-
-      console.log('Sending PDF form data:', {
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        num_questions: formData.num_questions,
-        grado_id: formData.grado_id,
-        materia_id: formData.materia_id,
-        dificultad: formData.dificultad,
-        tipo_quiz: formData.tipo_quiz,
-        tiempo_por_pregunta: formData.tiempo_por_pregunta,
-      });
 
       const response = await aiApi.generateFromPDF(data);
       
@@ -123,14 +117,10 @@ export default function UploadPDFModal({ open, onClose, grados = [], materias = 
         onClose();
       }, 500);
     } catch (error: any) {
-      console.error('Error uploading PDF:', error);
-      console.error('Error response:', error.response?.data);
-      
       const errorMsg = error.response?.data?.message || 'Error al generar quiz desde PDF';
       const errors = error.response?.data?.errors;
       
       if (errors && errors.length > 0) {
-        console.error('Validation errors:', errors);
         toast.error(`${errorMsg}: ${errors.map((e: any) => `${e.path} - ${e.message}`).join(', ')}`);
       } else {
         toast.error(errorMsg);
@@ -221,7 +211,16 @@ export default function UploadPDFModal({ open, onClose, grados = [], materias = 
                 min={5}
                 max={50}
                 value={formData.num_questions}
-                onChange={(e) => setFormData({ ...formData, num_questions: parseInt(e.target.value) })}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value);
+                  // Si el valor es válido y >= 5, usar ese valor, sino mantener el valor actual o 10 por defecto
+                  if (!isNaN(value) && value >= 5) {
+                    setFormData({ ...formData, num_questions: value });
+                  } else if (e.target.value === '') {
+                    // Si está vacío, permitir el estado vacío temporalmente pero usar 10 al enviar
+                    setFormData({ ...formData, num_questions: 10 });
+                  }
+                }}
                 disabled={uploading}
               />
             </div>

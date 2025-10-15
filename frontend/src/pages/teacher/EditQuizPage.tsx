@@ -66,9 +66,45 @@ export default function EditQuizPage() {
     explicacion: '',
   });
 
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  // Auto-ajustar tamaño del texto según longitud
+  const getTextSizeClass = (texto: string) => {
+    const length = texto.length;
+    if (length <= 40) return 'text-3xl'; // Pregunta corta: grande
+    if (length <= 70) return 'text-2xl'; // Pregunta media: mediano
+    if (length <= 100) return 'text-xl'; // Pregunta larga: normal
+    return 'text-lg'; // Pregunta muy larga: más pequeño
+  };
+
   useEffect(() => {
     loadData();
   }, [id]);
+
+  // Guardar índice de pregunta actual en localStorage
+  useEffect(() => {
+    if (id) {
+      localStorage.setItem(`quiz_${id}_question_index`, currentQuestionIndex.toString());
+    }
+  }, [currentQuestionIndex, id]);
+
+  // Actualizar preview cuando cambia la URL de imagen
+  useEffect(() => {
+    if (questionForm.imagen_url) {
+      setImagePreview(questionForm.imagen_url);
+    } else {
+      setImagePreview(null);
+    }
+  }, [questionForm.imagen_url]);
+
+  // Auto-resize textarea cuando carga el contenido
+  useEffect(() => {
+    const textarea = document.getElementById('question-text') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.max(textarea.scrollHeight, 80)}px`;
+    }
+  }, [questionForm.texto]);
 
   const loadData = async () => {
     try {
@@ -112,9 +148,13 @@ export default function EditQuizPage() {
         puntos_base: quizData.puntos_base,
       });
 
-      // Load first question if exists
+      // Load first question or last edited question if exists
       if (quizData.preguntas && quizData.preguntas.length > 0) {
-        loadQuestion(0, quizData.preguntas);
+        // Restaurar la última pregunta editada desde localStorage
+        const savedIndex = localStorage.getItem(`quiz_${id}_question_index`);
+        const index = savedIndex ? Math.min(parseInt(savedIndex), quizData.preguntas.length - 1) : 0;
+        setCurrentQuestionIndex(index);
+        loadQuestion(index, quizData.preguntas);
       }
     } catch (error: any) {
       console.error('Error loading quiz:', error);
@@ -166,16 +206,49 @@ export default function EditQuizPage() {
       return;
     }
 
-    if (questionForm.opciones.length < 2) {
-      toast.error('Debe haber al menos 2 opciones');
-      return;
+    // Validar opciones según el tipo de pregunta
+    if (questionForm.tipo === 'short_answer') {
+      // short_answer no necesita opciones
+      questionForm.opciones = [];
+    } else if (questionForm.tipo === 'fill_blanks') {
+      // fill_blanks: validar que haya opciones y respuestas correctas
+      if (questionForm.opciones.length < 3) {
+        toast.error('Debe haber al menos 3 opciones disponibles');
+        return;
+      }
+      const respuestas = questionForm.respuesta_correcta as string[];
+      const blanksCount = (questionForm.texto.match(/_____/g) || []).length;
+      
+      if (blanksCount === 0) {
+        toast.error('Debes usar _____ en el texto para indicar espacios en blanco');
+        return;
+      }
+      
+      if (!respuestas || respuestas.length !== blanksCount) {
+        toast.error(`Debes seleccionar exactamente ${blanksCount} respuesta(s) correcta(s) según los espacios en blanco`);
+        return;
+      }
+    } else if (questionForm.tipo === 'true_false') {
+      // true_false necesita exactamente 2 opciones
+      if (questionForm.opciones.length !== 2) {
+        toast.error('Verdadero/Falso debe tener exactamente 2 opciones');
+        return;
+      }
+    } else {
+      // Otros tipos necesitan al menos 2 opciones
+      if (questionForm.opciones.length < 2) {
+        toast.error('Debe haber al menos 2 opciones');
+        return;
+      }
     }
 
-    // Validar que las opciones no estén vacías
-    const hasEmptyOption = questionForm.opciones.some(opt => !opt.texto.trim());
-    if (hasEmptyOption) {
-      toast.error('Todas las opciones deben tener texto');
-      return;
+    // Validar que las opciones no estén vacías (excepto para tipos que no usan opciones)
+    if (!['short_answer', 'fill_blanks'].includes(questionForm.tipo || '')) {
+      const hasEmptyOption = questionForm.opciones.some(opt => !opt.texto.trim());
+      if (hasEmptyOption) {
+        toast.error('Todas las opciones deben tener texto');
+        return;
+      }
     }
 
     // Validar que haya al menos una respuesta correcta
@@ -212,13 +285,9 @@ export default function EditQuizPage() {
         tiempo_limite: questionForm.tiempo_limite ?? 20,
       };
 
-      // Only add optional fields if they have values
-      if (questionForm.imagen_url?.trim()) {
-        payload.imagen_url = questionForm.imagen_url;
-      }
-      if (questionForm.explicacion?.trim()) {
-        payload.explicacion = questionForm.explicacion;
-      }
+      // Add optional fields (use null to explicitly remove)
+      payload.imagen_url = questionForm.imagen_url?.trim() ? questionForm.imagen_url : null;
+      payload.explicacion = questionForm.explicacion?.trim() ? questionForm.explicacion : undefined;
 
       console.log('Sending payload:', JSON.stringify(payload, null, 2));
 
@@ -249,6 +318,64 @@ export default function EditQuizPage() {
     }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('La imagen no debe superar 5MB');
+        return;
+      }
+
+      // Comprimir imagen antes de cargar
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Redimensionar si es muy grande (mantener max 1200px)
+          const maxSize = 1200;
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = (height / width) * maxSize;
+              width = maxSize;
+            } else {
+              width = (width / height) * maxSize;
+              height = maxSize;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Comprimir con calidad 0.8
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          setQuestionForm({ ...questionForm, imagen_url: compressedBase64 });
+          setImagePreview(compressedBase64);
+          toast.success('Imagen cargada y optimizada');
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setQuestionForm({ ...questionForm, imagen_url: '' });
+    setImagePreview(null);
+  };
+
+  const handleTextAreaResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 80)}px`;
+    setQuestionForm({ ...questionForm, texto: e.target.value });
+  };
+
   const handleAddQuestion = () => {
     setQuestionForm({
       texto: '',
@@ -259,6 +386,7 @@ export default function EditQuizPage() {
       tiempo_limite: 20,
       explicacion: '',
     });
+    setImagePreview(null);
     setCurrentQuestionIndex(questions.length);
   };
 
@@ -302,8 +430,10 @@ export default function EditQuizPage() {
   };
 
   const handleRemoveOption = (index: number) => {
-    if (questionForm.opciones.length <= 2) {
-      toast.error('Debe haber al menos 2 opciones');
+    // Validar según el tipo
+    const minOptions = questionForm.tipo === 'fill_blanks' ? 1 : 2;
+    if (questionForm.opciones.length <= minOptions) {
+      toast.error(`Debe haber al menos ${minOptions} opción(es)`);
       return;
     }
     const newOptions = questionForm.opciones.filter((_, i) => i !== index);
@@ -551,16 +681,45 @@ export default function EditQuizPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Question Text */}
-              <div>
-                <Label htmlFor="question-text">Texto de la Pregunta *</Label>
-                <Textarea
-                  id="question-text"
-                  placeholder="Escribe tu pregunta aquí..."
-                  value={questionForm.texto}
-                  onChange={(e) => setQuestionForm({ ...questionForm, texto: e.target.value })}
-                  rows={3}
-                />
+              {/* Question Text + Image Preview Side by Side */}
+              <div className={imagePreview ? 'grid grid-cols-2 gap-8 items-center' : ''}>
+                <div>
+                  <Label htmlFor="question-text" className="text-lg font-bold mb-3 block">Pregunta *</Label>
+                  <Textarea
+                    id="question-text"
+                    placeholder="Escribe tu pregunta aquí..."
+                    value={questionForm.texto}
+                    onChange={handleTextAreaResize}
+                    className={`resize-none overflow-hidden font-bold leading-tight transition-all ${getTextSizeClass(questionForm.texto)}`}
+                    style={{
+                      minHeight: '180px',
+                      height: 'auto',
+                    }}
+                  />
+                  <p className="text-xs text-gray-500 mt-2">💡 Escribe una pregunta clara con buen tamaño</p>
+                </div>
+                {imagePreview && (
+                  <div className="relative">
+                    <Label className="block mb-3 text-lg font-bold">Preview Imagen</Label>
+                    <div className="relative border-4 border-amber-400 rounded-2xl p-5 bg-white flex items-center justify-center" style={{minHeight: '240px', maxHeight: '320px'}}>
+                      <img 
+                        src={imagePreview} 
+                        alt="Preview" 
+                        className="max-h-full max-w-full object-contain"
+                        style={{maxHeight: '280px'}}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="absolute top-2 right-2 bg-red-500 text-white hover:bg-red-600 h-8 w-8 p-0 rounded-full shadow-lg"
+                        onClick={handleRemoveImage}
+                        title="Eliminar imagen"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Question Type */}
@@ -570,7 +729,7 @@ export default function EditQuizPage() {
                   <Select
                     value={questionForm.tipo}
                     onValueChange={(value: any) => {
-                      // Si cambia a true_false, resetear opciones
+                      // Resetear opciones según el tipo
                       if (value === 'true_false') {
                         setQuestionForm({
                           ...questionForm,
@@ -579,10 +738,66 @@ export default function EditQuizPage() {
                             { texto: 'Verdadero' },
                             { texto: 'Falso' },
                           ],
-                          respuesta_correcta: ['0'],
+                          respuesta_correcta: '0',
+                        });
+                      } else if (value === 'short_answer') {
+                        setQuestionForm({
+                          ...questionForm,
+                          tipo: value,
+                          opciones: [],
+                          respuesta_correcta: '',
+                        });
+                      } else if (value === 'fill_blanks') {
+                        // fill_blanks: opciones disponibles y respuesta_correcta (palabras correctas)
+                        setQuestionForm({
+                          ...questionForm,
+                          tipo: value,
+                          opciones: [{ texto: '' }, { texto: '' }, { texto: '' }],
+                          respuesta_correcta: [],
+                        });
+                      } else if (value === 'order_sequence') {
+                        setQuestionForm({
+                          ...questionForm,
+                          tipo: value,
+                          opciones: [
+                            { texto: '' },
+                            { texto: '' },
+                            { texto: '' },
+                          ],
+                          respuesta_correcta: ['0', '1', '2'],
+                        });
+                      } else if (value === 'match_pairs') {
+                        setQuestionForm({
+                          ...questionForm,
+                          tipo: value,
+                          opciones: [
+                            { texto: '' },
+                            { texto: '' },
+                          ],
+                          respuesta_correcta: ['0', '1'],
+                        });
+                      } else if (value === 'multiple_select') {
+                        setQuestionForm({
+                          ...questionForm,
+                          tipo: value,
+                          opciones: [
+                            { texto: '' },
+                            { texto: '' },
+                            { texto: '' },
+                          ],
+                          respuesta_correcta: [],
                         });
                       } else {
-                        setQuestionForm({ ...questionForm, tipo: value });
+                        // multiple_choice
+                        setQuestionForm({
+                          ...questionForm,
+                          tipo: value,
+                          opciones: [
+                            { texto: '' },
+                            { texto: '' },
+                          ],
+                          respuesta_correcta: ['0'],
+                        });
                       }
                     }}
                   >
@@ -590,30 +805,397 @@ export default function EditQuizPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="multiple_choice">📝 Opción Múltiple</SelectItem>
-                      <SelectItem value="true_false">✓/✗ Verdadero/Falso</SelectItem>
+                      <SelectItem value="multiple_choice">⚫ Opción Múltiple (una correcta)</SelectItem>
+                      <SelectItem value="multiple_select">⚪ Selección Múltiple (varias correctas)</SelectItem>
+                      <SelectItem value="true_false">⚪ Verdadero/Falso</SelectItem>
+                      <SelectItem value="short_answer">⚪ Respuesta Corta</SelectItem>
+                      <SelectItem value="fill_blanks">⚪ Completar Espacios</SelectItem>
+                      <SelectItem value="order_sequence">⚪ Ordenar Secuencia</SelectItem>
+                      <SelectItem value="match_pairs">⚪ Relacionar Columnas</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <div>
-                  <Label htmlFor="imagen">Imagen (URL)</Label>
-                  <Input
-                    id="imagen"
-                    placeholder="https://..."
-                    value={questionForm.imagen_url || ''}
-                    onChange={(e) =>
-                      setQuestionForm({ ...questionForm, imagen_url: e.target.value })
-                    }
-                  />
+                {/* Imagen Upload/URL */}
+                <div className="space-y-2">
+                  <Label>📷 Imagen (opcional)</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="imagen-url" className="text-xs text-gray-600 font-medium">🔗 Pegar URL</Label>
+                      <Input
+                        id="imagen-url"
+                        placeholder="https://..."
+                        value={questionForm.imagen_url?.startsWith('data:') ? '' : questionForm.imagen_url || ''}
+                        onChange={(e) => {
+                          setQuestionForm({ ...questionForm, imagen_url: e.target.value });
+                        }}
+                        className="text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600 font-medium block mb-2">📁 Subir archivo</Label>
+                      <input
+                        id="imagen-file"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => document.getElementById('imagen-file')?.click()}
+                        className="w-full"
+                      >
+                        Subir archivo
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Options */}
+              {/* Options - Different UI based on question type */}
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <Label>Opciones de Respuesta *</Label>
-                  {questionForm.tipo !== 'true_false' && (
+                {/* Short Answer */}
+                {questionForm.tipo === 'short_answer' && (
+                  <div>
+                    <Label htmlFor="short-answer">Respuesta Correcta *</Label>
+                    <Input
+                      id="short-answer"
+                      placeholder="Escribe la respuesta esperada (1-2 palabras)"
+                      value={typeof questionForm.respuesta_correcta === 'string' ? questionForm.respuesta_correcta : ''}
+                      onChange={(e) =>
+                        setQuestionForm({ ...questionForm, respuesta_correcta: e.target.value })
+                      }
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 La respuesta del estudiante se comparará (sin mayúsculas/minúsculas)
+                    </p>
+                  </div>
+                )}
+
+                {/* Fill Blanks */}
+                {questionForm.tipo === 'fill_blanks' && (
+                  <div className="space-y-3">
+                    {(() => {
+                      const blanksCount = (questionForm.texto.match(/_____/g) || []).length;
+                      const selectedCount = (questionForm.respuesta_correcta as string[])?.length || 0;
+                      const needMore = blanksCount - selectedCount;
+                      
+                      return (
+                        <>
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <Label className="text-blue-900">📝 Instrucciones</Label>
+                            <p className="text-sm text-blue-800 mt-1">
+                              1. En el texto de la pregunta, usa <span className="font-mono bg-white px-1 border">_____</span> para cada espacio en blanco
+                            </p>
+                            <p className="text-sm text-blue-800 mt-1">
+                              2. Agrega mínimo 3 opciones de palabras disponibles (incluye distractoras)
+                            </p>
+                            <p className="text-sm text-blue-800 mt-1">
+                              3. Marca las respuestas correctas en orden (limitado a cantidad de espacios)
+                            </p>
+                            <p className="text-xs text-blue-600 mt-2 font-mono">
+                              Ejemplo: "La capital de _____ es París" → Opciones: Francia, España, Italia → Correcta: Francia
+                            </p>
+                          </div>
+
+                          {/* Contador de espacios */}
+                          {blanksCount > 0 && (
+                            <div className={`p-3 rounded-lg border-2 ${
+                              selectedCount === blanksCount 
+                                ? 'bg-green-50 border-green-500' 
+                                : 'bg-amber-50 border-amber-500'
+                            }`}>
+                              <p className="text-sm font-semibold">
+                                📊 Espacios en blanco detectados: <span className="text-lg">{blanksCount}</span>
+                              </p>
+                              <p className="text-sm mt-1">
+                                {selectedCount === blanksCount ? (
+                                  <span className="text-green-700">✅ ¡Perfecto! Todas las respuestas marcadas</span>
+                                ) : selectedCount > blanksCount ? (
+                                  <span className="text-red-700">⚠️ Tienes {selectedCount - blanksCount} respuestas de más</span>
+                                ) : (
+                                  <span className="text-amber-700">⏳ Te faltan {needMore} respuesta(s) correcta(s)</span>
+                                )}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Opciones disponibles */}
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <Label>Opciones Disponibles (mínimo 3) *</Label>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleAddOption}
+                                disabled={questionForm.opciones.length >= 6}
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Agregar Opción
+                              </Button>
+                            </div>
+                            <div className="space-y-2">
+                              {questionForm.opciones?.map((opcion, index) => {
+                                const respuestas = questionForm.respuesta_correcta as string[];
+                                const isCorrect = respuestas?.includes(opcion.texto);
+                                const orderNumber = isCorrect ? respuestas.indexOf(opcion.texto) + 1 : null;
+                                const canSelect = !isCorrect && blanksCount > 0 && selectedCount < blanksCount;
+                                
+                                return (
+                                  <div key={index} className="flex items-center gap-3">
+                                    <div
+                                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold transition-all ${
+                                        isCorrect
+                                          ? 'bg-green-500 text-white cursor-pointer'
+                                          : canSelect
+                                          ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 cursor-pointer'
+                                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                      }`}
+                                      onClick={() => {
+                                        if (!opcion.texto.trim()) {
+                                          toast.error('Escribe el texto de la opción primero');
+                                          return;
+                                        }
+                                        
+                                        const current = (questionForm.respuesta_correcta as string[]) || [];
+                                        if (current.includes(opcion.texto)) {
+                                          // Quitar de respuestas correctas
+                                          setQuestionForm({
+                                            ...questionForm,
+                                            respuesta_correcta: current.filter(r => r !== opcion.texto),
+                                          });
+                                        } else if (canSelect) {
+                                          // Agregar a respuestas correctas solo si no se excede el límite
+                                          setQuestionForm({
+                                            ...questionForm,
+                                            respuesta_correcta: [...current, opcion.texto],
+                                          });
+                                        } else if (!canSelect && !isCorrect) {
+                                          toast.error(`Ya tienes ${blanksCount} respuesta(s) marcada(s). Desmarca alguna primero.`);
+                                        }
+                                      }}
+                                      title={
+                                        isCorrect 
+                                          ? `Orden: ${orderNumber} (click para desmarcar)` 
+                                          : canSelect
+                                          ? 'Click para marcar como correcta'
+                                          : 'Límite alcanzado'
+                                      }
+                                    >
+                                      {isCorrect ? orderNumber : String.fromCharCode(65 + index)}
+                                    </div>
+                                    <Input
+                                      placeholder={`Opción ${String.fromCharCode(65 + index)}`}
+                                      value={opcion.texto}
+                                      onChange={(e) => {
+                                        const newOpciones = [...questionForm.opciones];
+                                        const oldTexto = newOpciones[index].texto;
+                                        newOpciones[index] = { ...newOpciones[index], texto: e.target.value };
+                                        
+                                        // Actualizar respuestas correctas si esta opción estaba seleccionada
+                                        const respuestas = questionForm.respuesta_correcta as string[];
+                                        if (respuestas?.includes(oldTexto)) {
+                                          const newRespuestas = respuestas.map(r => r === oldTexto ? e.target.value : r);
+                                          setQuestionForm({ 
+                                            ...questionForm, 
+                                            opciones: newOpciones,
+                                            respuesta_correcta: newRespuestas
+                                          });
+                                        } else {
+                                          setQuestionForm({ ...questionForm, opciones: newOpciones });
+                                        }
+                                      }}
+                                      className={isCorrect ? 'border-green-500 bg-green-50' : ''}
+                                    />
+                                    {questionForm.opciones.length > 3 && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleRemoveOption(index)}
+                                      >
+                                        <Trash2 className="h-4 w-4 text-red-600" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">
+                              💡 Solo puedes seleccionar {blanksCount > 0 ? blanksCount : '...'} respuesta(s) correcta(s) según los espacios en blanco
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Multiple Choice, Multiple Select, True/False */}
+                {['multiple_choice', 'multiple_select', 'true_false'].includes(questionForm.tipo || '') && (
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <Label>Opciones de Respuesta *</Label>
+                      {questionForm.tipo !== 'true_false' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddOption}
+                          disabled={questionForm.opciones.length >= 6}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Agregar Opción
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      {questionForm.opciones?.map((opcion, index) => {
+                        const respuestaArray = Array.isArray(questionForm.respuesta_correcta) 
+                          ? questionForm.respuesta_correcta 
+                          : [questionForm.respuesta_correcta];
+                        const isCorrect = respuestaArray.includes(index.toString());
+
+                        return (
+                          <div key={index} className="flex items-center gap-3">
+                            <div
+                              className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold cursor-pointer transition-all ${
+                                isCorrect
+                                  ? 'bg-green-500 text-white'
+                                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                              }`}
+                              onClick={() => {
+                                if (questionForm.tipo === 'multiple_select') {
+                                  // Multiple select: toggle
+                                  const indexStr = index.toString();
+                                  const current = questionForm.respuesta_correcta as string[];
+                                  if (current.includes(indexStr)) {
+                                    setQuestionForm({
+                                      ...questionForm,
+                                      respuesta_correcta: current.filter((i) => i !== indexStr),
+                                    });
+                                  } else {
+                                    setQuestionForm({
+                                      ...questionForm,
+                                      respuesta_correcta: [...current, indexStr],
+                                    });
+                                  }
+                                } else if (questionForm.tipo === 'true_false') {
+                                  // True/false: set as string
+                                  setQuestionForm({
+                                    ...questionForm,
+                                    respuesta_correcta: index.toString(),
+                                  });
+                                } else {
+                                  // Multiple choice: only one
+                                  handleToggleCorrectAnswer(index);
+                                }
+                              }}
+                              title="Click para marcar como correcta"
+                            >
+                              {isCorrect ? (
+                                <CheckCircle className="h-5 w-5" />
+                              ) : (
+                                String.fromCharCode(65 + index)
+                              )}
+                            </div>
+                            <Input
+                              placeholder={`Opción ${String.fromCharCode(65 + index)}`}
+                              value={opcion.texto}
+                              onChange={(e) => {
+                                const newOpciones = [...questionForm.opciones];
+                                newOpciones[index] = { ...newOpciones[index], texto: e.target.value };
+                                setQuestionForm({ ...questionForm, opciones: newOpciones });
+                              }}
+                              className={isCorrect ? 'border-green-500 bg-green-50' : ''}
+                              disabled={questionForm.tipo === 'true_false'}
+                            />
+                            {questionForm.opciones.length > 2 && questionForm.tipo !== 'true_false' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveOption(index)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-600" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 {questionForm.tipo === 'multiple_select' 
+                        ? 'Click en las letras para marcar TODAS las respuestas correctas' 
+                        : 'Click en la letra para marcar LA respuesta correcta'}
+                    </p>
+                  </>
+                )}
+
+                {/* Order Sequence */}
+                {questionForm.tipo === 'order_sequence' && (
+                  <div className="space-y-3">
+                    <Label>Elementos a Ordenar (en orden correcto) *</Label>
+                    <p className="text-sm text-gray-600 mb-2">
+                      🔀 Arrastra las tarjetas para reordenar. Se mostrarán desordenados al estudiante.
+                    </p>
+                    <DragDropContext
+                      onDragEnd={(result) => {
+                        if (!result.destination) return;
+                        const newOpciones = Array.from(questionForm.opciones);
+                        const [removed] = newOpciones.splice(result.source.index, 1);
+                        newOpciones.splice(result.destination.index, 0, removed);
+                        setQuestionForm({ ...questionForm, opciones: newOpciones });
+                      }}
+                    >
+                      <Droppable droppableId="order-sequence-options">
+                        {(provided) => (
+                          <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-2">
+                            {questionForm.opciones?.map((opcion, index) => (
+                              <Draggable key={`option-${index}`} draggableId={`option-${index}`} index={index}>
+                                {(provided, snapshot) => (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.draggableProps}
+                                    className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all ${
+                                      snapshot.isDragging
+                                        ? 'border-indigo-500 bg-indigo-50 shadow-lg'
+                                        : 'border-gray-200 bg-white hover:border-gray-300'
+                                    }`}
+                                  >
+                                    <div {...provided.dragHandleProps} className="cursor-grab active:cursor-grabbing">
+                                      <GripVertical className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500 text-white flex items-center justify-center font-semibold">
+                                      {index + 1}
+                                    </span>
+                                    <Input
+                                      placeholder={`Paso ${index + 1}`}
+                                      value={opcion.texto}
+                                      onChange={(e) => {
+                                        const newOpciones = [...questionForm.opciones];
+                                        newOpciones[index] = { ...newOpciones[index], texto: e.target.value };
+                                        setQuestionForm({ ...questionForm, opciones: newOpciones });
+                                      }}
+                                    />
+                                    {questionForm.opciones.length > 3 && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleRemoveOption(index)}
+                                      >
+                                        <Trash2 className="h-4 w-4 text-red-600" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                              </Draggable>
+                            ))}
+                            {provided.placeholder}
+                          </div>
+                        )}
+                      </Droppable>
+                    </DragDropContext>
                     <Button
                       variant="outline"
                       size="sm"
@@ -621,61 +1203,150 @@ export default function EditQuizPage() {
                       disabled={questionForm.opciones.length >= 6}
                     >
                       <Plus className="h-4 w-4 mr-2" />
-                      Agregar Opción
+                      Agregar Elemento
                     </Button>
-                  )}
-                </div>
+                  </div>
+                )}
 
-                <div className="space-y-3">
-                  {questionForm.opciones?.map((opcion, index) => {
-                    const isCorrect = (questionForm.respuesta_correcta as string[]).includes(
-                      index.toString()
-                    );
+                {/* Match Pairs */}
+                {questionForm.tipo === 'match_pairs' && (
+                  <div className="space-y-4">
+                    <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-300 rounded-xl p-4">
+                      <Label className="text-purple-900 font-bold text-base">🎮 Relacionar Columnas (Drag & Drop)</Label>
+                      <p className="text-sm text-purple-800 mt-1">
+                        • Arrastra los pares para reordenarlos<br/>
+                        • Los estudiantes verán tarjetas mezcladas<br/>
+                        • Deberán relacionarlas con colores tipo Kahoot
+                      </p>
+                    </div>
 
-                    return (
-                      <div key={index} className="flex items-center gap-3">
-                        <div
-                          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold cursor-pointer transition-all ${
-                            isCorrect
-                              ? 'bg-green-500 text-white'
-                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                          }`}
-                          onClick={() => handleToggleCorrectAnswer(index)}
-                          title="Click para marcar como correcta"
-                        >
-                          {isCorrect ? (
-                            <CheckCircle className="h-5 w-5" />
-                          ) : (
-                            String.fromCharCode(65 + index)
-                          )}
-                        </div>
-                        <Input
-                          placeholder={`Opción ${String.fromCharCode(65 + index)}`}
-                          value={opcion.texto}
-                          onChange={(e) => {
-                            const newOpciones = [...questionForm.opciones];
-                            newOpciones[index] = { ...newOpciones[index], texto: e.target.value };
-                            setQuestionForm({ ...questionForm, opciones: newOpciones });
-                          }}
-                          className={isCorrect ? 'border-green-500 bg-green-50' : ''}
-                          disabled={questionForm.tipo === 'true_false'}
-                        />
-                        {questionForm.opciones.length > 2 && questionForm.tipo !== 'true_false' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveOption(index)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
+                    <DragDropContext
+                      onDragEnd={(result) => {
+                        if (!result.destination) return;
+                        const items = Array.from(questionForm.opciones);
+                        const [reorderedItem] = items.splice(result.source.index, 1);
+                        items.splice(result.destination.index, 0, reorderedItem);
+                        setQuestionForm({ ...questionForm, opciones: items });
+                      }}
+                    >
+                      <Droppable droppableId="match-pairs">
+                        {(provided) => (
+                          <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-3">
+                            {questionForm.opciones?.map((opcion, index) => {
+                              const parts = opcion.texto.includes('→') 
+                                ? opcion.texto.split('→').map(s => s.trim())
+                                : opcion.texto.includes('->') 
+                                ? opcion.texto.split('->').map(s => s.trim())
+                                : [opcion.texto || '', ''];
+                              const columnA = parts[0] || '';
+                              const columnB = parts[1] || '';
+                              
+                              // Colores para cada par
+                              const pairColors = [
+                                { bg: 'bg-purple-100', border: 'border-purple-400', icon: 'bg-purple-500' },
+                                { bg: 'bg-pink-100', border: 'border-pink-400', icon: 'bg-pink-500' },
+                                { bg: 'bg-amber-100', border: 'border-amber-400', icon: 'bg-amber-500' },
+                                { bg: 'bg-cyan-100', border: 'border-cyan-400', icon: 'bg-cyan-500' },
+                                { bg: 'bg-lime-100', border: 'border-lime-400', icon: 'bg-lime-500' },
+                                { bg: 'bg-rose-100', border: 'border-rose-400', icon: 'bg-rose-500' },
+                              ];
+                              const colors = pairColors[index % pairColors.length];
+
+                              return (
+                                <Draggable key={`pair-${index}`} draggableId={`pair-${index}`} index={index}>
+                                  {(provided, snapshot) => (
+                                    <div
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
+                                      className={`border-4 rounded-xl p-4 transition-all ${
+                                        snapshot.isDragging ? 'shadow-2xl scale-105' : 'shadow-sm'
+                                      } ${colors.bg} ${colors.border}`}
+                                    >
+                                      <div className="flex items-start gap-4">
+                                        <div {...provided.dragHandleProps} className="cursor-move mt-2">
+                                          <GripVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                                        </div>
+                                        <div className="flex-1 grid grid-cols-2 gap-4">
+                                          {/* Columna A */}
+                                          <div>
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <span className={`w-6 h-6 rounded-full ${colors.icon} text-white flex items-center justify-center text-xs font-bold shadow-sm`}>
+                                                {index + 1}
+                                              </span>
+                                              <Label className="text-xs font-bold text-gray-700">📋 Concepto</Label>
+                                            </div>
+                                            <Input
+                                              placeholder="Ej: Luz solar"
+                                              value={columnA}
+                                              onChange={(e) => {
+                                                const newOpciones = [...questionForm.opciones];
+                                                newOpciones[index] = { 
+                                                  ...newOpciones[index], 
+                                                  texto: `${e.target.value} → ${columnB}`
+                                                };
+                                                setQuestionForm({ ...questionForm, opciones: newOpciones });
+                                              }}
+                                              className="bg-white border-2 border-blue-300 focus:border-blue-500 font-medium"
+                                            />
+                                          </div>
+                                          {/* Columna B */}
+                                          <div>
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <span className="text-lg font-bold text-gray-400">→</span>
+                                              <Label className="text-xs font-bold text-gray-700">🎯 Relacionado</Label>
+                                            </div>
+                                            <Input
+                                              placeholder="Ej: Proporciona energía"
+                                              value={columnB}
+                                              onChange={(e) => {
+                                                const newOpciones = [...questionForm.opciones];
+                                                newOpciones[index] = { 
+                                                  ...newOpciones[index], 
+                                                  texto: `${columnA} → ${e.target.value}`
+                                                };
+                                                setQuestionForm({ ...questionForm, opciones: newOpciones });
+                                              }}
+                                              className="bg-white border-2 border-green-300 focus:border-green-500 font-medium"
+                                            />
+                                          </div>
+                                        </div>
+                                        {questionForm.opciones.length > 2 && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="mt-8 h-8 w-8 p-0 hover:bg-red-100"
+                                            onClick={() => handleRemoveOption(index)}
+                                          >
+                                            <Trash2 className="h-4 w-4 text-red-600" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </Draggable>
+                              );
+                            })}
+                            {provided.placeholder}
+                          </div>
                         )}
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  💡 Click en la letra para marcar la respuesta correcta
-                </p>
+                      </Droppable>
+                    </DragDropContext>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddOption}
+                      disabled={questionForm.opciones.length >= 6}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Agregar Par de Conceptos
+                    </Button>
+                    <p className="text-xs text-center text-gray-600">
+                      ⚡ Para los estudiantes: Las tarjetas se mezclarán y deberán relacionar con colores.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Time and Points */}
@@ -760,13 +1431,20 @@ export default function EditQuizPage() {
             </CardContent>
           </Card>
 
-          {/* Preview */}
-          {currentQuestion && (
-            <div className="mt-6">
-              <h3 className="font-semibold text-gray-900 mb-3">Vista Previa</h3>
-              <QuestionCard question={currentQuestion} showCorrectAnswer />
-            </div>
-          )}
+          {/* Preview - Actualización en tiempo real */}
+          <div className="mt-6">
+            <h3 className="font-semibold text-gray-900 mb-3">Vista Previa</h3>
+            <QuestionCard 
+              question={{
+                ...questionForm,
+                id: currentQuestion?.id || '',
+                quiz_id: quiz?.id || '',
+                orden: currentQuestion?.orden || (currentQuestionIndex + 1),
+                fecha_creacion: currentQuestion?.fecha_creacion || new Date().toISOString(),
+              } as Question} 
+              showCorrectAnswer 
+            />
+          </div>
         </div>
       </div>
 

@@ -64,11 +64,19 @@ export const createQuestionSchema = z.object({
   imagen_url: z.string().optional(),
   video_url: z.string().optional(),
   audio_url: z.string().optional(),
-  tipo: z.enum(['multiple_choice', 'true_false', 'texto_libre']).optional().default('multiple_choice'),
+  tipo: z.enum([
+    'multiple_choice',    // Una respuesta correcta
+    'multiple_select',    // Varias respuestas correctas
+    'true_false',         // Verdadero/Falso
+    'short_answer',       // Respuesta corta
+    'fill_blanks',        // Completar espacios
+    'order_sequence',     // Ordenar secuencia
+    'match_pairs'         // Relacionar columnas/pares
+  ]).optional().default('multiple_choice'),
   opciones: z.array(z.object({
     texto: z.string(),
     imagen_url: z.string().optional(),
-  })).min(2, 'Debe haber al menos 2 opciones').max(6, 'Máximo 6 opciones'),
+  })).min(0).max(6, 'Máximo 6 opciones'),
   respuesta_correcta: z.union([
     z.string(), // Para verdadero/falso o texto libre
     z.array(z.string()), // Para opción múltiple (índices como strings: "0", "1", etc.)
@@ -82,14 +90,22 @@ export const createQuestionSchema = z.object({
 // Schema para actualizar pregunta
 export const updateQuestionSchema = z.object({
   texto: z.string().min(5).optional(),
-  imagen_url: z.string().optional(),
-  video_url: z.string().optional(),
-  audio_url: z.string().optional(),
-  tipo: z.enum(['multiple_choice', 'true_false', 'texto_libre']).optional(),
+  imagen_url: z.string().nullable().optional(),
+  video_url: z.string().nullable().optional(),
+  audio_url: z.string().nullable().optional(),
+  tipo: z.enum([
+    'multiple_choice',
+    'multiple_select',
+    'true_false',
+    'short_answer',
+    'fill_blanks',
+    'order_sequence',
+    'match_pairs'
+  ]).optional(),
   opciones: z.array(z.object({
     texto: z.string(),
     imagen_url: z.string().optional(),
-  })).min(2).max(6).optional(),
+  })).min(0).max(6).optional(),
   respuesta_correcta: z.union([
     z.string(),
     z.array(z.string()),
@@ -114,6 +130,15 @@ export const aiGenerateQuizSchema = z.object({
   dificultad: z.enum(['facil', 'medio', 'dificil']),
   tipo_quiz: z.enum(['kahoot', 'mario_party', 'duelo']).optional().default('kahoot'),
   tiempo_por_pregunta: z.number().int().positive().optional().default(20),
+  question_types: z.array(z.enum([
+    'multiple_choice',
+    'multiple_select',
+    'true_false',
+    'short_answer',
+    'fill_blanks',
+    'order_sequence',
+    'match_pairs'
+  ])).optional(), // Si está vacío o no se envía, la IA usa todos los tipos
 });
 
 // Types

@@ -38,7 +38,7 @@ export class AIController {
         },
       });
     } catch (error: any) {
-      console.error('Error generating quiz:', error);
+      console.error('Error generating quiz:', error.message);
       res.status(400).json({
         success: false,
         message: error.message || 'Error al generar quiz',
@@ -53,14 +53,6 @@ export class AIController {
     try {
       const userId = (req as any).user.id;
       
-      console.log('PDF Upload - Request body:', req.body);
-      console.log('PDF Upload - File:', req.file ? {
-        fieldname: req.file.fieldname,
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size
-      } : 'No file');
-      
       if (!req.file) {
         res.status(400).json({
           success: false,
@@ -70,7 +62,7 @@ export class AIController {
       }
 
       const pdfBuffer = req.file.buffer;
-      const params = {
+      const params: any = {
         num_questions: parseInt(req.body.num_questions),
         grado_id: req.body.grado_id,
         materia_id: req.body.materia_id,
@@ -79,7 +71,14 @@ export class AIController {
         tiempo_por_pregunta: parseInt(req.body.tiempo_por_pregunta) || 20,
       };
 
-      console.log('PDF Upload - Parsed params:', params);
+      // Agregar question_types si viene en el body
+      if (req.body.question_types) {
+        try {
+          params.question_types = JSON.parse(req.body.question_types);
+        } catch (e) {
+          // Ignorar error de parseo
+        }
+      }
 
       const quizId = await aiService.generateFromPDF(userId, pdfBuffer, params);
 
@@ -91,7 +90,7 @@ export class AIController {
         },
       });
     } catch (error: any) {
-      console.error('Error generating quiz from PDF:', error);
+      console.error('Error generating quiz from PDF:', error.message);
       res.status(400).json({
         success: false,
         message: error.message || 'Error al generar quiz desde PDF',

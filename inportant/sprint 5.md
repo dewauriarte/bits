@@ -1,199 +1,325 @@
-## **🔷 SPRINT 5: Core Gameplay \- Classic Mode (Semanas 9-10)**
+## 🔷 SPRINT 5: Classic Mode - Gameplay (Semanas 9-10)
 
-### **🎯 Objetivos del Sprint**
+### 🎯 Objetivos
+- ✅ Gameplay completo modo Kahoot
+- ✅ Preguntas en tiempo real sincronizadas
+- ✅ Sistema de scoring con combos
+- ✅ Leaderboard en vivo
 
-* ✅ Gameplay completo Classic Mode (Backend)
-* ✅ Preguntas en tiempo real
-* ✅ Sistema de scoring funcional
-* ✅ Leaderboard live
-* ✅ Frontend UI (completado)
+### 📦 BACKEND
 
-### **📦 Backend Tasks**
+#### Game Flow Logic
+- [✅] `socket.on('game:start')`
+  - ✅ Obtener preguntas del quiz
+  - ✅ Shuffle si config.shuffle_questions
+  - ✅ Inicializar estado del juego en Redis
+  - ✅ Broadcast `game:started`
+  - ✅ Enviar primera pregunta (sin respuesta)
+  - ✅ Iniciar timer server-side
+  
+- [✅] `sendQuestion(roomCode)`
+  - ✅ Obtener pregunta actual
+  - ✅ Preparar opciones (shuffle si config)
+  - ✅ Remove is_correct de opciones
+  - ✅ Broadcast `question:new`
+  - ✅ Start countdown con setInterval
+  - ✅ Broadcast `timer:tick` cada segundo
 
-#### **Game Flow Logic**
+- [✅] `socket.on('answer:submit')`
+  - ✅ Params: { roomCode, questionId, answer, time_taken }
+  - ✅ Validar que timer no expiró
+  - ✅ Check si respuesta correcta
+  - ✅ Calcular puntos:
+    ```typescript
+    const basePoints = 1000;
+    const speedBonus = calculateSpeedBonus(time_taken, time_limit);
+    const comboMultiplier = 1 + (player.combo * 0.1);
+    const totalPoints = (basePoints + speedBonus) * comboMultiplier;
+    ```
+  - ✅ Update combo_streak (++ si correcto, 0 si incorrecto)
+  - ✅ Guardar en sala_respuestas
+  - ✅ Update score del player
+  - ✅ Emit callback a player con resultado
+  - ✅ Update leaderboard en memoria
+  - ✅ Broadcast `leaderboard:update`
 
-* \[✅\] `socket.on('game:start')` \- Lógica completa
-    * ✅ Obtener todas las preguntas del set con `GameplayService.initializeGame()`
-    * ✅ Shuffle si config.shuffle\_questions
-    * ✅ Enviar primera pregunta (sin respuesta correcta)
-    * ✅ Iniciar timer server-side
+- [✅] Timer Management
+  - ✅ Server-side countdown (no confiar en cliente)
+  - ✅ Al llegar a 0:
+    - ✅ Broadcast `question:timeout`
+    - ✅ Esperar 3 seg (ver respuesta)
+    - ✅ `showQuestionResults()`
+    - ✅ Avanzar a siguiente o terminar
 
-* \[✅\] `sendQuestion(gameCode)` - Función implementada
-    * ✅ Get question con opciones usando `prepareQuestion()`
-    * ✅ Shuffle opciones (preparado, comentado para futuro)
-    * ✅ Remove is\_correct de opciones
-    * ✅ Broadcast: `question:new`
-    * ✅ Start countdown timer con `setInterval`
+- [✅] `showQuestionResults(roomCode)`
+  - ✅ Calcular stats de pregunta:
+    - ✅ % que respondió correctamente
+    - ✅ Tiempo promedio
+    - ✅ Distribución de respuestas
+  - ✅ Broadcast `question:results`
+  - ✅ Wait 5 segundos
+  - ✅ Si hay más preguntas:
+    - ✅ `sendQuestion()` con siguiente
+  - ✅ Si no:
+    - ✅ `endGame()`
 
-* \[✅\] `socket.on('answer:submit')` \- Lógica completa
-    * ✅ Validar que timer no expiró
-    * ✅ Check si respuesta correcta
-    * ✅ Calcular puntos (base \+ speed \+ combo)
-    * ✅ Actualizar score del player en DB
-    * ✅ Actualizar combo\_streak
-    * ✅ Guardar en game\_answers con todos los datos
-    * ✅ Emit a player: resultado con callback
-    * ✅ Update leaderboard en memoria
-    * ✅ Broadcast: `leaderboard:update`
+- [✅] `endGame(roomCode)`
+  - ✅ Calcular leaderboard final
+  - ✅ Determinar rankings
+  - ✅ Calcular recompensas:
+    ```typescript
+    1st place: 3 copas, +800 XP
+    2nd place: 2 copas, +500 XP
+    3rd place: 1 copa, +300 XP
+    Participación: +100 XP
+    ```
+  - ✅ Guardar en resultados_finales
+  - ✅ Otorgar XP y copas en perfiles_gamer
+  - ⚠️ Check insignias desbloqueadas (pendiente)
+  - ✅ Broadcast `game:finished` con data completa
 
-* \[✅\] Timer Management
-    * ✅ Server-side countdown con `setInterval`
-    * ✅ Broadcast `timer:tick` cada segundo
-    * ✅ Al llegar a 0: `question:timeout`
-    * ✅ Dar 5 segundos para ver resultados
-    * ✅ Avanzar a siguiente pregunta o terminar con `showQuestionResults()`
+#### Scoring System
+- [✅] `utils/scoring.ts`
+  ```typescript
+  export function calculateSpeedBonus(
+    timeTaken: number,
+    timeLimit: number
+  ): number {
+    const speedRatio = 1 - (timeTaken / timeLimit);
+    return Math.floor(speedRatio * 500);
+  }
+  
+  export function calculateComboMultiplier(
+    comboStreak: number
+  ): number {
+    return 1 + (comboStreak * 0.1);
+  }
+  ```
 
-* \[✅\] End Game Logic
-    * ✅ Calcular estadísticas finales
-    * ✅ Determinar rankings con `getLeaderboard()`
-    * ✅ Calcular recompensas (XP, coins, gems)
-    * ✅ Guardar en game\_results con todos los datos
-    * ✅ Otorgar recompensas a user_profiles y user_currencies
-    * ✅ Broadcast: `game:finished` con leaderboard final
+- [✅] Service `GameplayService`
+  ```typescript
+  class GameplayService {
+    ✅ initializeGame(roomCode): void
+    ✅ processAnswer(params): AnswerResult
+    ✅ getLeaderboard(roomCode): Player[]
+    ✅ calculateRewards(player, rank, totalPlayers): Rewards
+    ✅ finalizeGame(roomCode): GameResults
+  }
+  ```
 
-#### **Scoring System**
+#### Analytics y Estadísticas
+- [✅] Guardar estadísticas detalladas
+    * ✅ sala_respuestas con todos los datos (correcta, tiempo_respuesta_ms, puntos, multiplicador)
+    * ✅ resultados_finales con estadísticas finales (accuracy, posicion, rank, rewards)
+    * ✅ Actualizar stats de questions (veces_respondida, veces_correcta)
+    * ⚠️ Actualizar stats de quiz (veces_jugado) - PENDIENTE
+    * ✅ Actualizar perfiles_gamer (experiencia, copas, trofeos, estadisticas JSON)
+    * ✅ Actualizar sala_participantes en tiempo real (puntos_actuales, respuestas_correctas)
 
-* \[✅\] Implementar fórmula de puntos en `utils/scoring.ts`
-    * ✅ Base points: 1000
-    * ✅ Speed bonus: 0-500 según tiempo
-    * ✅ Combo multiplier: 1 + (combo * 0.1)
+#### Testing Backend
+- [ ] Tests de game flow completo
+- [ ] Tests de scoring (varios scenarios)
+- [ ] Tests de timer logic
+- [ ] Tests de end game y rewards
+- [ ] Tests de analytics
+- [ ] Load test: 100 players
+- [ ] Coverage: 75%+
 
-* \[✅\] Método `processAnswer()` - Actualiza score del jugador
-* \[✅\] Método `getLeaderboard()` - Calcula ranking en tiempo real
-* \[✅\] Método `calculateRewards()` - Basado en ranking y total players
+### 🎨 FRONTEND
 
-#### **Analytics**
+#### Pantalla Estudiante - Gameplay
 
-* \[✅\] Guardar estadísticas detalladas
-    * ✅ game\_answers con todos los datos (was_correct, time_taken, points, combo_multiplier)
-    * ✅ game\_results con estadísticas finales (accuracy, avg response time, rank, rewards)
-    * ✅ Actualizar stats de questions (times\_answered, times\_correct)
-    * ✅ Actualizar stats de question\_sets (times\_played)
-    * ✅ Actualizar user\_profiles (total_xp, games played/won, total questions/correct)
-    * ✅ Actualizar user\_currencies (coins, gems, totals earned)
+##### Waiting Screen
+- [ ] Pantalla entre preguntas
+  - "Get Ready..."
+  - Countdown animado 3-2-1
+  - Fade in/out transitions
+  - Sound cue
 
-#### **Testing Backend**
+##### Question Screen
+- [ ] Componente principal de pregunta
+  - Header:
+    - # Pregunta (1/20)
+    - Timer circular animado
+    - Tu score actual
+  - Pregunta:
+    - Texto grande y claro
+    - Imagen si exists (question.media_url)
+  - Opciones:
+    - 4 botones grandes
+    - Colores: rojo, azul, verde, amarillo
+    - Hover effects
+    - Click para seleccionar
+    - Disabled después de responder
+  - Footer:
+    - Combo indicator si >= 3
+    - "Answered!" badge cuando envía
 
-* \[ \] Tests de game flow completo (Testing manual OK)
-* \[ \] Tests de scoring (diferentes scenarios)
-* \[ \] Tests de timer logic
-* \[ \] Tests de end game
-* \[ \] Tests de recompensas
-* \[ \] Load test: 100 players simultáneos
+##### Answer Feedback Screen
+- [ ] Pantalla de resultado (3-5 seg)
+  - Si CORRECTO:
+    - ✅ Grande con animación
+    - Confetti effect
+    - Sound "ding!"
+    - Mostrar puntos ganados:
+      ```
+      +1000 (base)
+      +450 (velocidad ⚡)
+      x1.3 (combo 🔥)
+      ───────────
+      = +1,885 pts
+      ```
+    - Combo indicator actualizado
+  - Si INCORRECTO:
+    - ❌ con shake animation
+    - Sound "buzzer"
+    - Mostrar respuesta correcta
+    - "Combo perdido" si tenía
+  - Explicación educativa (si disponible)
+  - Tu posición actual
+  - Next question in 2...
 
-### **🎨 Frontend Tasks**
+##### Leaderboard Intermedio
+- [ ] Mostrar entre preguntas (5 seg)
+  - Top 5 jugadores
+  - Animated transitions
+  - Tu posición destacada
+  - Cambios (↑ ↓ →)
+  - Scores
 
-#### **Game Screens \- Student**
+##### Final Results Screen
+- [ ] Pantalla de resultados finales
+  - Podium animado:
+    - 🥇 1st place
+    - 🥈 2nd place  
+    - 🥉 3rd place
+  - Tu posición final
+  - Stats:
+    - Score total
+    - Accuracy %
+    - Combo máximo
+    - Preguntas correctas
+  - Recompensas:
+    - XP ganado (con barra de progreso)
+    - Copas ganadas
+    - Insignias desbloqueadas (con animación)
+  - Botón "Ver Leaderboard Completo"
+  - Botón "Volver al Inicio"
 
-* \[✅\] Waiting Screen (entre preguntas)
-    * ✅ "Get ready..."
-    * ✅ Countdown 3-2-1
-    * ✅ Animación de transición
-* \[✅\] Question Screen
-    * ✅ Número de pregunta (1/20)
-    * ✅ Texto de pregunta (grande, legible)
-    * ✅ Imagen si hay (question.media\_url)
-    * ✅ Timer visual (progress bar \+ number)
-    * ✅ 4 opciones como botones grandes
-        * ✅ Colores distintos (rojo, azul, amarillo, verde)
-        * ✅ Click para seleccionar
-        * ✅ Disabled una vez respondido
-    * ✅ Indicador "Answered" cuando envía
-* \[✅\] Answer Result Screen (5 segundos)
-    * ✅ ✓ Correcto → Confetti \+ sound
-    * ✅ ✗ Incorrecto → Shake animation
-    * ✅ Puntos ganados (con animación)
-    * ✅ Combo indicator si 3+
-    * ✅ Mostrar respuesta correcta
-    * ✅ Explicación educativa (si hay)
-* \[✅\] Leaderboard Intermedio (entre preguntas)
-    * ✅ Top 5 con animación
-    * ✅ Current player destacado
-    * ✅ Scores
-    * ✅ Cambios de posición (↑↓)
-* \[✅\] Final Results Screen
-    * ✅ Podium top 3
-    * ✅ Position del jugador
-    * ✅ Score total
-    * ✅ Accuracy %
-    * ✅ Combo más alto
-    * ✅ Recompensas ganadas (XP, coins)
-    * ✅ Botón "Continue"
+#### Pantalla Profesor - Control Panel
 
-#### **Game Screens \- Teacher**
+##### During Game
+- [ ] Panel de control en vivo
+  - Header:
+    - Pregunta actual (# y texto)
+    - Timer sincronizado
+    - Progress bar (X/20 preguntas)
+  - Stats en vivo:
+    - Responses: X/Y respondieron
+    - Distribución de respuestas (gráfico)
+    - Accuracy actual
+  - Mini leaderboard (Top 10)
+  - Controls:
+    - [ ] Botón "Skip Question" (emergencia)
+    - [ ] Botón "Pause Game"
+  - Feed de eventos:
+    - "María respondió correctamente"
+    - "Juan perdió su combo"
 
-* \[✅\] Control Panel (mientras juego activo)
-    * ✅ Pregunta actual
-    * ✅ Timer
-    * ✅ Cantidad de respuestas recibidas (X/Y)
-    * ✅ Mini leaderboard
-    * \[ \] Botón "Skip Question" (emergency)
-    * \[ \] Botón "Pause Game"
-* \[⏳\] Live Statistics (parcial)
-    * \[ \] Gráfico de respuestas (A, B, C, D)
-    * ✅ Accuracy en tiempo real
-    * \[ \] Average response time
-* \[✅\] Post-Game Dashboard
-    * ✅ Leaderboard final completo
-    * ✅ Estadísticas por pregunta
-    * \[ \] Conceptos difíciles identificados
-    * \[ \] Recomendaciones
-    * \[ \] Botón "Export Results"
+##### After Game
+- [ ] Post-Game Dashboard
+  - Leaderboard final completo
+    - Scroll para ver todos
+    - Export a CSV
+  - Análisis por pregunta:
+    - Pregunta más difícil
+    - Pregunta más fácil
+    - Tiempo promedio por pregunta
+  - Stats de la clase:
+    - Accuracy promedio
+    - Temas a reforzar
+  - [ ] Recomendaciones automáticas
+  - Acciones:
+    - [ ] Enviar resultados a padres
+    - [ ] Crear quiz de repaso
+    - [ ] Jugar de nuevo
+    - [ ] Copiar para otra clase
 
-#### **Animations**
+#### Animaciones y Efectos
+- [ ] Framer Motion animations:
+  - Entrada de preguntas (fade + slide)
+  - Opciones (stagger entrance)
+  - Confetti en aciertos
+  - Shake en fallos
+  - Leaderboard transitions
+  - Number counting animations
+  - Progress bars animadas
 
-* \[✅\] Framer Motion animations
-    * ✅ Entrada de preguntas (fade \+ slide)
-    * ✅ Botones de respuesta (hover \+ click)
-    * ✅ Confetti al acertar
-    * ✅ Shake al fallar
-    * ✅ Leaderboard changes (smooth transitions)
-* \[✅\] Progress indicators
-    * ✅ Timer circular
-    * ✅ Loading skeletons
-    * ✅ Smooth transitions
+- [ ] Sonidos:
+  - [ ] Correct answer (ding)
+  - [ ] Wrong answer (buzzer)
+  - [ ] Timer ticking (últimos 5 seg)
+  - [ ] Countdown beeps
+  - [ ] Combo achievement (power-up)
 
-#### **Sound Effects (Opcional Sprint 5\)**
+#### Real-time State Management
+- [ ] Zustand store para gameplay
+  ```typescript
+  interface GameStore {
+    gameState: 'waiting' | 'question' | 'feedback' | 'leaderboard' | 'finished';
+    currentQuestion: Question | null;
+    timeRemaining: number;
+    myAnswer: string | null;
+    answerResult: AnswerResult | null;
+    leaderboard: Player[];
+    myScore: number;
+    myCombo: number;
+    // ... acciones
+  }
+  ```
 
-* \[ \] Correct answer sound
-* \[ \] Wrong answer sound
-* \[ \] Countdown ticks
-* \[ \] Game start sound
-* \[ \] Combo achievement sound
+- [ ] Escuchar eventos WS:
+  - `game:started` → Reset state
+  - `question:new` → Mostrar pregunta
+  - `timer:tick` → Update countdown
+  - `question:timeout` → Block answers
+  - `question:results` → Mostrar resultados
+  - `leaderboard:update` → Update leaderboard
+  - `game:finished` → Pantalla final
 
-#### **Testing Frontend**
+#### Testing Frontend
+- [ ] Tests de QuestionScreen
+- [ ] Tests de AnswerFeedback
+- [ ] Tests de Leaderboard updates
+- [ ] Tests de score calculations
+- [ ] Tests de final results
+- [ ] E2E test completo
+- [ ] Coverage: 65%+
 
-* \[ \] Tests de question screen
-* \[ \] Tests de answer submission
-* \[ \] Tests de leaderboard updates
-* \[ \] Tests de end game screen
-* \[ \] E2E test de juego completo
+### ✅ Criterios de Aceptación
 
-### **✅ Criterios de Aceptación**
+- [ ] Profesor inicia juego, countdown en todos
+- [ ] Primera pregunta sync en todos los clientes
+- [ ] Timer funciona y es sync
+- [ ] Estudiante selecciona y envía respuesta
+- [ ] Feedback inmediato (correcto/incorrecto)
+- [ ] Puntos calculados correctamente (base + velocidad + combo)
+- [ ] Leaderboard actualiza en tiempo real
+- [ ] Combo de 3+ muestra indicador
+- [ ] Al terminar tiempo, avanza automático
+- [ ] Resultados finales muestran rankings correctos
+- [ ] Recompensas se otorgan (XP, copas guardados)
+- [ ] No hay lag con 50+ jugadores
+- [ ] UI responsive en móvil
+- [ ] Tests passing
 
-* \[✅\] Teacher inicia juego y todos ven countdown
-* \[✅\] Primera pregunta se muestra a todos simultáneamente
-* \[✅\] Timer funciona y es sincronizado
-* \[✅\] Estudiante puede seleccionar respuesta y enviar
-* \[✅\] Feedback inmediato (correcto/incorrecto)
-* \[✅\] Puntos se calculan correctamente (base \+ velocidad \+ combo)
-* \[✅\] Leaderboard se actualiza en tiempo real
-* \[✅\] Combo de 3+ muestra indicador especial
-* \[✅\] Al terminar tiempo, avanza automáticamente
-* \[✅\] Después de última pregunta, muestra resultados finales
-* \[✅\] Rankings correctos (ordenados por score)
-* \[✅\] Recompensas se otorgan (XP, coins guardados en BD)
-* \[ \] Teacher puede ver estadísticas detalladas
-* \[ \] No hay lag con 50+ jugadores
-* \[ \] UI responsive y clara en móvil
+### 📈 Métricas de Éxito
 
-### **📈 Métricas de Éxito**
-
-* Juego completo (20 preguntas) toma \~10-15 min
-* 0 errores de sincronización
-* Latency \<50ms para answer submission
-* 95%+ de mensajes WebSocket entregados
-* 0 crashes durante gameplay
-* FPS \>30 en animaciones
+- Juego de 20 preguntas toma ~10-15 min
+- 0 errores de sincronización
+- Latency < 50ms para answer submit
+- 95%+ mensajes WS entregados
+- 0 crashes durante gameplay
+- FPS > 30 en animaciones
 
 ---

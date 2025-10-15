@@ -26,6 +26,15 @@ export interface Quiz {
   num_preguntas?: number;
 }
 
+export type QuestionType = 
+  | 'multiple_choice'    // Una respuesta correcta
+  | 'multiple_select'    // Varias respuestas correctas
+  | 'true_false'         // Verdadero/Falso
+  | 'short_answer'       // Respuesta corta
+  | 'fill_blanks'        // Completar espacios
+  | 'order_sequence'     // Ordenar secuencia
+  | 'match_pairs';       // Relacionar columnas
+
 export interface Question {
   id: string;
   quiz_id: string;
@@ -34,7 +43,7 @@ export interface Question {
   imagen_url?: string;
   video_url?: string;
   audio_url?: string;
-  tipo: 'multiple_choice' | 'true_false' | 'texto_libre';
+  tipo: QuestionType;
   opciones: { texto: string; imagen_url?: string }[];
   respuesta_correcta: string | string[];
   puntos: number;
@@ -62,10 +71,10 @@ export interface CreateQuizInput {
 
 export interface CreateQuestionInput {
   texto: string;
-  imagen_url?: string;
-  video_url?: string;
-  audio_url?: string;
-  tipo?: 'multiple_choice' | 'true_false' | 'texto_libre';
+  imagen_url?: string | null;
+  video_url?: string | null;
+  audio_url?: string | null;
+  tipo?: QuestionType;
   opciones: { texto: string; imagen_url?: string }[];
   respuesta_correcta: string | string[];
   puntos?: number;
@@ -82,6 +91,7 @@ export interface AIGenerateInput {
   dificultad: 'facil' | 'medio' | 'dificil';
   tipo_quiz?: 'kahoot' | 'mario_party' | 'duelo';
   tiempo_por_pregunta?: number;
+  question_types?: QuestionType[];
 }
 
 export const quizzesApi = {
