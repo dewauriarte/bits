@@ -1,0 +1,567 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model avatares_clase {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clase_id         String?   @db.Uuid
+  estudiante_id    String?   @db.Uuid
+  emoji            String    @db.VarChar(10)
+  color            String?   @db.VarChar(20)
+  nombre_avatar    String?   @db.VarChar(50)
+  posicion         Int
+  asignado         Boolean?  @default(false)
+  activo           Boolean?  @default(true)
+  fecha_creacion   DateTime? @default(now()) @db.Timestamp(6)
+  fecha_asignacion DateTime? @db.Timestamp(6)
+  clases           clases?   @relation(fields: [clase_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios         usuarios? @relation(fields: [estudiante_id], references: [id], onUpdate: NoAction)
+
+  @@unique([clase_id, posicion])
+  @@index([clase_id], map: "idx_avatares_clase_clase")
+  @@index([estudiante_id], map: "idx_avatares_clase_estudiante")
+}
+
+model clase_estudiantes {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clase_id          String?   @db.Uuid
+  estudiante_id     String?   @db.Uuid
+  fecha_inscripcion DateTime? @default(now()) @db.Timestamp(6)
+  estado            String?   @default("activo") @db.VarChar(20)
+  clases            clases?   @relation(fields: [clase_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios          usuarios? @relation(fields: [estudiante_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([clase_id, estudiante_id])
+  @@index([clase_id], map: "idx_clase_estudiantes_clase")
+  @@index([estudiante_id], map: "idx_clase_estudiantes_estudiante")
+}
+
+model clases {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre            String              @db.VarChar(100)
+  codigo            String              @unique @db.VarChar(10)
+  profesor_id       String?             @db.Uuid
+  grado_id          String?             @db.Uuid
+  materia_id        String?             @db.Uuid
+  anio_escolar      String?             @db.VarChar(20)
+  descripcion       String?
+  color             String?             @db.VarChar(20)
+  activo            Boolean?            @default(true)
+  fecha_creacion    DateTime?           @default(now()) @db.Timestamp(6)
+  avatares_clase    avatares_clase[]
+  clase_estudiantes clase_estudiantes[]
+  grados            grados?             @relation(fields: [grado_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  materias          materias?           @relation(fields: [materia_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios          usuarios?           @relation(fields: [profesor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  login_history     login_history[]
+  salas             salas[]
+
+  @@index([codigo], map: "idx_clases_codigo")
+  @@index([profesor_id], map: "idx_clases_profesor")
+}
+
+model configuracion_sistema {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clave               String    @unique @db.VarChar(100)
+  valor               Json
+  descripcion         String?
+  fecha_actualizacion DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model equipo_miembros {
+  id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  equipo_id              String?             @db.Uuid
+  participante_id        String?             @db.Uuid
+  puntos_aportados       Int?                @default(0)
+  respuestas_correctas   Int?                @default(0)
+  respuestas_incorrectas Int?                @default(0)
+  es_capitan             Boolean?            @default(false)
+  fecha_union            DateTime?           @default(now()) @db.Timestamp(6)
+  equipos                equipos?            @relation(fields: [equipo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sala_participantes     sala_participantes? @relation(fields: [participante_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([equipo_id, participante_id])
+  @@index([equipo_id], map: "idx_equipo_miembros_equipo")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model equipos {
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id                 String?                   @db.Uuid
+  nombre                  String                    @db.VarChar(100)
+  color                   String                    @db.VarChar(20)
+  icono                   String?                   @db.VarChar(50)
+  puntos_totales          Int?                      @default(0)
+  respuestas_correctas    Int?                      @default(0)
+  respuestas_incorrectas  Int?                      @default(0)
+  porcentaje_acierto      Decimal?                  @default(0) @db.Decimal(5, 2)
+  posicion_final          Int?
+  fecha_creacion          DateTime?                 @default(now()) @db.Timestamp(6)
+  equipo_miembros         equipo_miembros[]
+  salas                   salas?                    @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  preguntas_colaborativas preguntas_colaborativas[]
+  sala_participantes      sala_participantes[]
+
+  @@index([sala_id], map: "idx_equipos_sala")
+}
+
+model grados {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre         String    @db.VarChar(100)
+  nivel          String    @db.VarChar(50)
+  orden          Int
+  config_ui      Json?
+  fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
+  clases         clases[]
+  quizzes        quizzes[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model insignias {
+  id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre                 String              @db.VarChar(100)
+  descripcion            String?
+  icono                  String?             @db.VarChar(255)
+  rareza                 String?             @db.VarChar(20)
+  criterio               Json
+  recompensa_experiencia Int?                @default(0)
+  activo                 Boolean?            @default(true)
+  fecha_creacion         DateTime?           @default(now()) @db.Timestamp(6)
+  usuario_insignias      usuario_insignias[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model login_history {
+  id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_id               String?                   @db.Uuid
+  participante_temporal_id String?                   @db.Uuid
+  metodo_login             String                    @db.VarChar(30)
+  ip_address               String?                   @db.VarChar(45)
+  user_agent               String?
+  device_type              String?                   @db.VarChar(20)
+  clase_id                 String?                   @db.Uuid
+  sala_id                  String?                   @db.Uuid
+  exitoso                  Boolean?                  @default(true)
+  mensaje_error            String?
+  fecha_login              DateTime?                 @default(now()) @db.Timestamp(6)
+  clases                   clases?                   @relation(fields: [clase_id], references: [id], onUpdate: NoAction)
+  participantes_temporales participantes_temporales? @relation(fields: [participante_temporal_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salas                    salas?                    @relation(fields: [sala_id], references: [id], onUpdate: NoAction)
+  usuarios                 usuarios?                 @relation(fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([fecha_login], map: "idx_login_history_fecha")
+  @@index([usuario_id], map: "idx_login_history_usuario")
+}
+
+model logs_actividad {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_id     String?   @db.Uuid
+  tipo_evento    String    @db.VarChar(50)
+  descripcion    String?
+  metadata       Json?
+  ip_address     String?   @db.Inet
+  user_agent     String?
+  fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
+  usuarios       usuarios? @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tipo_evento], map: "idx_logs_actividad_tipo")
+  @@index([usuario_id], map: "idx_logs_actividad_usuario")
+}
+
+model logs_ia {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_id              String?   @db.Uuid
+  tipo_operacion          String    @db.VarChar(50)
+  prompt                  String?
+  respuesta               Json?
+  tokens_usados           Int?
+  costo_estimado          Decimal?  @db.Decimal(10, 4)
+  tiempo_procesamiento_ms Int?
+  proveedor               String?   @db.VarChar(50)
+  modelo                  String?   @db.VarChar(50)
+  exitoso                 Boolean?
+  error                   String?
+  fecha_creacion          DateTime? @default(now()) @db.Timestamp(6)
+  usuarios                usuarios? @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([fecha_creacion], map: "idx_logs_ia_fecha")
+  @@index([usuario_id], map: "idx_logs_ia_usuario")
+}
+
+model mario_party_estado {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id               String?             @unique @db.Uuid
+  tablero_id            String?             @db.Uuid
+  ronda_actual          Int?                @default(1)
+  rondas_totales        Int?                @default(15)
+  jugador_turno_id      String?             @db.Uuid
+  estrellas_disponibles Json?               @default("[{\"activa\": true, \"posicion\": 13}, {\"activa\": true, \"posicion\": 26}]")
+  eventos_activos       Json?               @default("[]")
+  fecha_creacion        DateTime?           @default(now()) @db.Timestamp(6)
+  fecha_actualizacion   DateTime?           @default(now()) @db.Timestamp(6)
+  sala_participantes    sala_participantes? @relation(fields: [jugador_turno_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salas                 salas?              @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tableros              tableros?           @relation(fields: [tablero_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model mario_party_eventos {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id            String?             @db.Uuid
+  participante_id    String?             @db.Uuid
+  ronda              Int
+  tipo_evento        String              @db.VarChar(50)
+  detalles           Json
+  fecha_creacion     DateTime?           @default(now()) @db.Timestamp(6)
+  sala_participantes sala_participantes? @relation(fields: [participante_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salas              salas?              @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model materias {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre         String    @db.VarChar(100)
+  icono          String?   @db.VarChar(50)
+  color          String?   @db.VarChar(20)
+  descripcion    String?
+  fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
+  clases         clases[]
+  quizzes        quizzes[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model notificaciones {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_id     String?   @db.Uuid
+  tipo           String    @db.VarChar(50)
+  titulo         String    @db.VarChar(200)
+  mensaje        String
+  icono          String?   @db.VarChar(50)
+  data           Json?     @default("{}")
+  action_url     String?   @db.VarChar(255)
+  leida          Boolean?  @default(false)
+  fecha_leida    DateTime? @db.Timestamp(6)
+  fecha_creacion DateTime? @default(now()) @db.Timestamp(6)
+  usuarios       usuarios? @relation(fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([leida], map: "idx_notificaciones_leida")
+  @@index([tipo], map: "idx_notificaciones_tipo")
+  @@index([usuario_id], map: "idx_notificaciones_usuario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model participantes_temporales {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id               String?         @db.Uuid
+  nombre                String          @db.VarChar(100)
+  nickname              String?         @db.VarChar(100)
+  metodo_acceso         String          @db.VarChar(20)
+  session_token         String?         @unique
+  ip_address            String?         @db.VarChar(45)
+  user_agent            String?
+  usuario_registrado_id String?         @db.Uuid
+  activo                Boolean?        @default(true)
+  fecha_entrada         DateTime?       @default(now()) @db.Timestamp(6)
+  fecha_salida          DateTime?       @db.Timestamp(6)
+  login_history         login_history[]
+  salas                 salas?          @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios              usuarios?       @relation(fields: [usuario_registrado_id], references: [id], onUpdate: NoAction)
+
+  @@index([sala_id], map: "idx_participantes_sala")
+  @@index([session_token], map: "idx_participantes_token")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model perfiles_gamer {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_id           String?   @unique @db.Uuid
+  nivel                Int?      @default(1)
+  experiencia          Int?      @default(0)
+  puntos_totales       BigInt?   @default(0)
+  copas                Int?      @default(0)
+  trofeos_oro          Int?      @default(0)
+  trofeos_plata        Int?      @default(0)
+  trofeos_bronce       Int?      @default(0)
+  avatar_personalizado Json?
+  titulo_actual        String?   @db.VarChar(100)
+  color_favorito       String?   @db.VarChar(20)
+  estadisticas         Json?     @default("{\"podios\": 0, \"victorias\": 0, \"duelos_ganados\": 0, \"juegos_jugados\": 0, \"mejor_posicion\": 0, \"duelos_perdidos\": 0, \"estrellas_totales\": 0, \"preguntas_correctas\": 0, \"tiempo_total_minutos\": 0, \"preguntas_respondidas\": 0}")
+  fecha_creacion       DateTime? @default(now()) @db.Timestamp(6)
+  fecha_actualizacion  DateTime? @default(now()) @db.Timestamp(6)
+  usuarios             usuarios? @relation(fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model preguntas {
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quiz_id                 String?                   @db.Uuid
+  orden                   Int
+  texto                   String
+  imagen_url              String?                   @db.VarChar(255)
+  video_url               String?                   @db.VarChar(255)
+  audio_url               String?                   @db.VarChar(255)
+  tipo                    String?                   @default("multiple_choice") @db.VarChar(30)
+  opciones                Json
+  respuesta_correcta      Json?
+  puntos                  Int?                      @default(1000)
+  tiempo_limite           Int?                      @default(20)
+  explicacion             String?
+  imagen_explicacion      String?                   @db.VarChar(255)
+  veces_respondida        Int?                      @default(0)
+  veces_correcta          Int?                      @default(0)
+  fecha_creacion          DateTime?                 @default(now()) @db.Timestamp(6)
+  quizzes                 quizzes?                  @relation(fields: [quiz_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  preguntas_colaborativas preguntas_colaborativas[]
+  sala_respuestas         sala_respuestas[]
+
+  @@index([quiz_id], map: "idx_preguntas_quiz")
+}
+
+model preguntas_colaborativas {
+  id                       String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id                  String?    @db.Uuid
+  pregunta_id              String?    @db.Uuid
+  equipo_id                String?    @db.Uuid
+  votos                    Json?      @default("{}")
+  respuesta_final          String?    @db.VarChar(10)
+  correcta                 Boolean?
+  tiempo_decision_segundos Int?
+  puntos_ganados           Int?       @default(0)
+  fecha_inicio             DateTime?  @default(now()) @db.Timestamp(6)
+  fecha_decision           DateTime?  @db.Timestamp(6)
+  equipos                  equipos?   @relation(fields: [equipo_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  preguntas                preguntas? @relation(fields: [pregunta_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salas                    salas?     @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model quizzes {
+  id                        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  titulo                    String      @db.VarChar(200)
+  descripcion               String?
+  creador_id                String?     @db.Uuid
+  materia_id                String?     @db.Uuid
+  grado_id                  String?     @db.Uuid
+  tags                      String[]
+  palabras_clave            String[]
+  imagen_portada            String?     @db.VarChar(255)
+  tipo_quiz                 String?     @default("kahoot") @db.VarChar(30)
+  dificultad                String?     @db.VarChar(20)
+  puntos_base               Int?        @default(1000)
+  bonificacion_velocidad    Boolean?    @default(true)
+  bonificacion_combo        Boolean?    @default(true)
+  tiempo_total_minutos      Int?
+  tiempo_por_pregunta       Int?        @default(20)
+  duracion_estimada_minutos Int?
+  origen                    String?     @db.VarChar(50)
+  metadatos_origen          Json?
+  estado                    String?     @default("borrador") @db.VarChar(20)
+  publico                   Boolean?    @default(false)
+  configuracion             Json?       @default("{\"musica_fondo\": true, \"mostrar_ranking\": true, \"permitir_repetir\": true, \"mostrar_respuestas\": true, \"tiempo_congelamiento\": 5}")
+  veces_jugado              Int?        @default(0)
+  promedio_acierto          Decimal?    @db.Decimal(5, 2)
+  fecha_creacion            DateTime?   @default(now()) @db.Timestamp(6)
+  fecha_actualizacion       DateTime?   @default(now()) @db.Timestamp(6)
+  preguntas                 preguntas[]
+  usuarios                  usuarios?   @relation(fields: [creador_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  grados                    grados?     @relation(fields: [grado_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  materias                  materias?   @relation(fields: [materia_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salas                     salas[]
+
+  @@index([creador_id], map: "idx_quizzes_creador")
+  @@index([estado], map: "idx_quizzes_estado")
+  @@index([tags], map: "idx_quizzes_tags", type: Gin)
+  @@index([tipo_quiz], map: "idx_quizzes_tipo")
+}
+
+model resultados_finales {
+  id                        String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id                   String?             @db.Uuid
+  participante_id           String?             @db.Uuid
+  puntos_totales            Int
+  posicion                  Int
+  preguntas_respondidas     Int?
+  respuestas_correctas      Int?
+  respuestas_incorrectas    Int?
+  porcentaje_acierto        Decimal?            @db.Decimal(5, 2)
+  tiempo_promedio_respuesta Int?
+  tiempo_total_juego        Int?
+  experiencia_ganada        Int?                @default(0)
+  copas_ganadas             Int?                @default(0)
+  trofeo_tipo               String?             @db.VarChar(20)
+  insignias_desbloqueadas   Json?               @default("[]")
+  fecha_creacion            DateTime?           @default(now()) @db.Timestamp(6)
+  sala_participantes        sala_participantes? @relation(fields: [participante_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salas                     salas?              @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([participante_id], map: "idx_resultados_participante")
+  @@index([sala_id], map: "idx_resultados_sala")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sala_participantes {
+  id                     String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id                String?               @db.Uuid
+  usuario_id             String?               @db.Uuid
+  nickname               String?               @db.VarChar(100)
+  avatar                 String?               @db.VarChar(100)
+  equipo_id              String?               @db.Uuid
+  estado                 String?               @default("conectado") @db.VarChar(20)
+  ultimo_ping            DateTime?             @default(now()) @db.Timestamp(6)
+  ultimo_heartbeat       DateTime?             @db.Timestamp(6)
+  latencia_ms            Int?
+  dispositivo            String?               @db.VarChar(50)
+  navegador              String?               @db.VarChar(50)
+  puntos_actuales        Int?                  @default(0)
+  respuestas_correctas   Int?                  @default(0)
+  respuestas_incorrectas Int?                  @default(0)
+  racha_actual           Int?                  @default(0)
+  racha_maxima           Int?                  @default(0)
+  posicion_tablero       Int?                  @default(0)
+  estrellas              Int?                  @default(0)
+  items_especiales       Json?                 @default("[]")
+  fecha_union            DateTime?             @default(now()) @db.Timestamp(6)
+  equipo_miembros        equipo_miembros[]
+  mario_party_estado     mario_party_estado[]
+  mario_party_eventos    mario_party_eventos[]
+  resultados_finales     resultados_finales[]
+  equipos                equipos?              @relation(fields: [equipo_id], references: [id], onUpdate: NoAction, map: "fk_equipo")
+  salas                  salas?                @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios               usuarios?             @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sala_respuestas        sala_respuestas[]
+
+  @@index([sala_id], map: "idx_sala_participantes_sala")
+  @@index([usuario_id], map: "idx_sala_participantes_usuario")
+}
+
+model sala_respuestas {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sala_id             String?             @db.Uuid
+  participante_id     String?             @db.Uuid
+  pregunta_id         String?             @db.Uuid
+  respuesta           Json
+  correcta            Boolean
+  tiempo_respuesta_ms Int
+  timestamp_respuesta DateTime?           @default(now()) @db.Timestamp(6)
+  puntos_base         Int?
+  puntos_velocidad    Int?
+  multiplicador       Int?                @default(1)
+  puntos_totales      Int?
+  racha_al_momento    Int?
+  posicion_al_momento Int?
+  sala_participantes  sala_participantes? @relation(fields: [participante_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  preguntas           preguntas?          @relation(fields: [pregunta_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salas               salas?              @relation(fields: [sala_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([participante_id], map: "idx_sala_respuestas_participante")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model salas {
+  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo                   String                     @unique @db.VarChar(8)
+  quiz_id                  String?                    @db.Uuid
+  profesor_id              String?                    @db.Uuid
+  clase_id                 String?                    @db.Uuid
+  tipo_sala                String                     @db.VarChar(30)
+  modo_acceso              String?                    @default("abierto") @db.VarChar(20)
+  estado                   String?                    @default("esperando") @db.VarChar(20)
+  config_juego             Json?                      @default("{}")
+  fecha_inicio             DateTime?                  @db.Timestamp(6)
+  fecha_fin                DateTime?                  @db.Timestamp(6)
+  pregunta_actual_index    Int?                       @default(0)
+  tiempo_inicio_pregunta   DateTime?                  @db.Timestamp(6)
+  fecha_creacion           DateTime?                  @default(now()) @db.Timestamp(6)
+  qr_token                 String?
+  qr_url                   String?                    @db.VarChar(255)
+  join_url                 String?                    @db.VarChar(255)
+  permite_invitados        Boolean?                   @default(true)
+  max_participantes        Int?
+  equipos                  equipos[]
+  login_history            login_history[]
+  mario_party_estado       mario_party_estado?
+  mario_party_eventos      mario_party_eventos[]
+  participantes_temporales participantes_temporales[]
+  preguntas_colaborativas  preguntas_colaborativas[]
+  resultados_finales       resultados_finales[]
+  sala_participantes       sala_participantes[]
+  sala_respuestas          sala_respuestas[]
+  clases                   clases?                    @relation(fields: [clase_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios                 usuarios?                  @relation(fields: [profesor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  quizzes                  quizzes?                   @relation(fields: [quiz_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([codigo], map: "idx_salas_codigo")
+  @@index([estado], map: "idx_salas_estado")
+  @@index([profesor_id], map: "idx_salas_profesor")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tableros {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre               String               @db.VarChar(100)
+  tema                 String?              @db.VarChar(50)
+  total_casillas       Int
+  config_casillas      Json
+  imagen_preview       String?              @db.VarChar(255)
+  posiciones_estrellas Int[]                @default([13, 26])
+  activo               Boolean?             @default(true)
+  fecha_creacion       DateTime?            @default(now()) @db.Timestamp(6)
+  mario_party_estado   mario_party_estado[]
+}
+
+model usuario_insignias {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuario_id      String?    @db.Uuid
+  insignia_id     String?    @db.Uuid
+  fecha_obtencion DateTime?  @default(now()) @db.Timestamp(6)
+  progreso        Json?
+  insignias       insignias? @relation(fields: [insignia_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios        usuarios?  @relation(fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([usuario_id, insignia_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model usuarios {
+  id                       String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username                 String                     @unique @db.VarChar(50)
+  email                    String?                    @unique @db.VarChar(100)
+  password_hash            String                     @db.VarChar(255)
+  nombre                   String                     @db.VarChar(100)
+  apellido                 String                     @db.VarChar(100)
+  rol                      String                     @db.VarChar(20)
+  avatar_url               String?                    @db.VarChar(255)
+  fecha_nacimiento         DateTime?                  @db.Date
+  estado                   String?                    @default("activo") @db.VarChar(20)
+  ultimo_login             DateTime?                  @db.Timestamp(6)
+  fecha_creacion           DateTime?                  @default(now()) @db.Timestamp(6)
+  fecha_actualizacion      DateTime?                  @default(now()) @db.Timestamp(6)
+  tipo_auth                String?                    @default("email") @db.VarChar(20)
+  avatares_clase           avatares_clase[]
+  clase_estudiantes        clase_estudiantes[]
+  clases                   clases[]
+  login_history            login_history[]
+  logs_actividad           logs_actividad[]
+  logs_ia                  logs_ia[]
+  notificaciones           notificaciones[]
+  participantes_temporales participantes_temporales[]
+  perfiles_gamer           perfiles_gamer?
+  quizzes                  quizzes[]
+  sala_participantes       sala_participantes[]
+  salas                    salas[]
+  usuario_insignias        usuario_insignias[]
+
+  @@index([email], map: "idx_usuarios_email")
+  @@index([estado], map: "idx_usuarios_estado")
+  @@index([rol], map: "idx_usuarios_rol")
+}
