@@ -33,6 +33,8 @@ import CreateRoomPage from '@/pages/teacher/CreateRoomPage';
 import TeacherLobbyPage from '@/pages/teacher/TeacherLobbyPage';
 import TeacherGameControl from '@/pages/teacher/TeacherGameControl';
 import GameplayPage from '@/pages/student/GameplayPage';
+import MarioPartyGamePage from '@/pages/student/MarioPartyGamePage';
+import MarioPartyControl from '@/pages/teacher/MarioPartyControl';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,6 +72,7 @@ function App() {
           {/* Game Routes - Public for students */}
           <Route path="/game/:code/lobby" element={<TeacherLobbyPage />} />
           <Route path="/game/:roomCode/play" element={<GameplayPage />} />
+          <Route path="/game/:roomCode/mario-party" element={<MarioPartyGamePage />} />
 
           {/* Teacher/Admin Dashboard with Sidebar */}
           <Route element={<TeacherLayout />}>
@@ -80,6 +83,7 @@ function App() {
             <Route path="/teacher/rooms/create" element={<CreateRoomPage />} />
             <Route path="/teacher/rooms/:code/lobby" element={<TeacherLobbyPage />} />
             <Route path="/teacher/rooms/:roomCode/control" element={<TeacherGameControl />} />
+            <Route path="/teacher/rooms/:roomCode/mario-party-control" element={<MarioPartyControl />} />
             <Route path="/clases" element={<ClassesPage />} />
             <Route path="/clases/:id/editar" element={<EditClassPage />} />
             <Route path="/clases/:id" element={<ClassDetailPage />} />

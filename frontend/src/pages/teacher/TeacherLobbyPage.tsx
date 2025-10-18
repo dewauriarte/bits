@@ -1,12 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { 
   Play, X, Users, Settings, Clock, Trophy, Zap,
-  Loader2, AlertCircle
+  Loader2, AlertCircle, Gamepad2, BookOpen
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRoomStore } from '@/stores/roomStore';
@@ -16,6 +17,7 @@ import QRCodeDisplay from '@/components/game/QRCodeDisplay';
 import PlayerGrid from '@/components/game/PlayerGrid';
 import CountdownAnimation from '@/components/game/CountdownAnimation';
 import { CountdownEvent } from '@/types/socket.types';
+import BoardSelector from '@/components/mario-party/BoardSelector';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +41,8 @@ export default function TeacherLobbyPage() {
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [recentEvents, setRecentEvents] = useState<string[]>([]);
   const [isTeacher, setIsTeacher] = useState(false);
+  const [gameMode, setGameMode] = useState<'quiz' | 'mario_party' | null>(null);
+  const [showBoardSelector, setShowBoardSelector] = useState(false);
   const initializingRef = useRef(false);
 
   useEffect(() => {
@@ -92,23 +96,9 @@ export default function TeacherLobbyPage() {
       let playerData: any = null;
       let userIsTeacher = false;
       
-      // SIEMPRE intentar primero como profesor
-      try {
-        roomData = await roomsApi.getRoomFullState(code!);
-        userIsTeacher = true;
-        setIsTeacher(true);
-        setRoom(roomData.room);
-        console.log('✅ Authenticated as teacher');
-      } catch (error) {
-        // No es profesor, intentar como estudiante
-        if (!isAnonymousStudent) {
-          toast.error('No tienes permiso para acceder a esta sala');
-          navigate('/student/join');
-          return;
-        }
-        
-        // Continuar como estudiante
-        console.log('📝 Not a teacher, loading as student');
+      // Si es estudiante con token temporal, NO intentar la API de profesor
+      if (isAnonymousStudent) {
+        console.log('📝 Detected student with temporary token, loading as student');
         userIsTeacher = false;
         setIsTeacher(false);
         
@@ -121,6 +111,20 @@ export default function TeacherLobbyPage() {
         }
         playerData = JSON.parse(savedPlayerStr);
         // No setear room aún - se obtendrá del WebSocket al unirse
+      } else {
+        // Solo intentar como profesor si NO es estudiante anónimo
+        try {
+          roomData = await roomsApi.getRoomFullState(code!);
+          userIsTeacher = true;
+          setIsTeacher(true);
+          setRoom(roomData.room);
+          console.log('✅ Authenticated as teacher');
+        } catch (error) {
+          // No es profesor y no es estudiante anónimo
+          toast.error('No tienes permiso para acceder a esta sala');
+          navigate('/student/join');
+          return;
+        }
       }
 
       // Unirse según rol
@@ -224,25 +228,36 @@ export default function TeacherLobbyPage() {
       addEvent(`Un jugador está ${data.isReady ? 'listo' : 'no listo'}`);
     });
 
-    // Room updated
+    // Room updated - MEJORADO para evitar duplicados
     gameSocket.onRoomUpdated((data) => {
       console.log('Room updated - Players count:', data.room.players.length);
       
-      // Filtrar jugadores duplicados por ID
-      const uniquePlayers = data.room.players.filter((player: any, index: number, self: any[]) => 
-        index === self.findIndex((p) => p.id === player.id)
-      );
+      // Filtrar jugadores duplicados por ID Y por nickname (para evitar duplicados)
+      const seenIds = new Set();
+      const seenNicknames = new Set();
+      const uniquePlayers = data.room.players.filter((player: any) => {
+        // Si ya vimos este ID o nickname, es un duplicado
+        if (seenIds.has(player.id) || seenNicknames.has(player.nickname)) {
+          console.warn('⚠️ Duplicate player filtered:', player.nickname);
+          return false;
+        }
+        seenIds.add(player.id);
+        seenNicknames.add(player.nickname);
+        return true;
+      });
       
       console.log('After dedup:', uniquePlayers.length);
       
-      if (uniquePlayers.length !== data.room.players.length) {
-        console.warn('⚠️ Removed', data.room.players.length - uniquePlayers.length, 'duplicate players');
-      }
-      
+      // Actualizar el estado inmediatamente para tiempo real
       setRoom({
         ...data.room,
         players: uniquePlayers,
       });
+      
+      // Forzar re-render si es necesario
+      if (uniquePlayers.length !== data.room.players.length) {
+        console.warn('⚠️ Removed', data.room.players.length - uniquePlayers.length, 'duplicate players');
+      }
     });
 
     // Game starting
@@ -282,6 +297,33 @@ export default function TeacherLobbyPage() {
       }, 500);
     });
 
+    // Mario Party started - redirect students to the game
+    const socket = gameSocket.getSocket();
+    if (socket) {
+      socket.on('mario:game_started', (data: any) => {
+        console.log('Mario Party started:', data);
+        
+        // Check if this is a student/player
+        const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+        const sessionType = localStorage.getItem('session_type');
+        const userIsTeacher = token && !token.startsWith('temp_') && sessionType !== 'anonymous';
+        
+        if (!userIsTeacher) {
+          // Student/player - redirect to Mario Party game
+          toast.success('¡Mario Party ha comenzado!');
+          setTimeout(() => {
+            navigate(`/game/${code}/mario-party`);
+          }, 500);
+        } else {
+          // Teacher - redirect to control panel
+          toast.success('¡Mario Party iniciado! Redirigiendo al panel de control...');
+          setTimeout(() => {
+            navigate(`/teacher/rooms/${code}/mario-party-control`);
+          }, 500);
+        }
+      });
+    }
+
     // Game cancelled
     gameSocket.onGameCancelled((data) => {
       console.log('Game cancelled:', data);
@@ -316,6 +358,12 @@ export default function TeacherLobbyPage() {
     gameSocket.offGameStarted();
     gameSocket.offGameCancelled();
     gameSocket.offGameClosed();
+    
+    // Cleanup Mario Party socket
+    const socket = gameSocket.getSocket();
+    if (socket) {
+      socket.off('mario:game_started');
+    }
   };
 
   const addEvent = (message: string) => {
@@ -333,8 +381,19 @@ export default function TeacherLobbyPage() {
       return;
     }
 
-    setStarting(true);
+    // Si no se ha seleccionado modo, mostrar selector
+    if (!gameMode) {
+      return;
+    }
 
+    // Si es Mario Party, mostrar selector de tablero
+    if (gameMode === 'mario_party') {
+      setShowBoardSelector(true);
+      return;
+    }
+
+    // Modo quiz normal
+    setStarting(true);
     gameSocket.startGame(
       { roomCode: code },
       (response) => {
@@ -346,6 +405,30 @@ export default function TeacherLobbyPage() {
         }
       }
     );
+  };
+
+  const handleStartMarioParty = (boardId: string) => {
+    if (!room || !code) return;
+    
+    setStarting(true);
+    setShowBoardSelector(false);
+    
+    const socket = gameSocket.getSocket();
+    if (!socket) return;
+    
+    socket.emit('mario:start_game', {
+      roomCode: code,
+      boardId: boardId
+    }, (response: any) => {
+      if (response.success) {
+        toast.success('¡Mario Party iniciado!');
+        // Redirigir a la página del juego
+        navigate(`/game/${code}/mario-party`);
+      } else {
+        toast.error('Error al iniciar Mario Party');
+        setStarting(false);
+      }
+    });
   };
 
   const handleCloseRoom = () => {
@@ -627,10 +710,46 @@ export default function TeacherLobbyPage() {
               </CardContent>
             </Card>
 
+            {/* Game Mode Selection */}
+            {isTeacher && (
+              <Card className="border-2">
+                <CardContent className="py-4">
+                  <p className="text-sm font-semibold mb-3">Selecciona el modo de juego:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant={gameMode === 'quiz' ? 'default' : 'outline'}
+                      onClick={() => setGameMode('quiz')}
+                      className="h-20 flex flex-col gap-2"
+                    >
+                      <BookOpen className="h-6 w-6" />
+                      <span className="text-xs font-semibold">Quiz Clásico</span>
+                    </Button>
+                    <Button
+                      variant={gameMode === 'mario_party' ? 'default' : 'outline'}
+                      onClick={() => setGameMode('mario_party')}
+                      className="h-20 flex flex-col gap-2"
+                    >
+                      <Gamepad2 className="h-6 w-6" />
+                      <span className="text-xs font-semibold">Mario Party</span>
+                    </Button>
+                  </div>
+                  {gameMode && (
+                    <div className="mt-3 p-2 bg-primary/10 rounded-lg text-center">
+                      <p className="text-xs text-primary">
+                        {gameMode === 'quiz' 
+                          ? '¿ Preguntas en tiempo real con clasificación!'
+                          : '🎲 ¡Tablero con dados y eventos sorpresa!'}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Start Button */}
             <Button
               onClick={handleStartGame}
-              disabled={!canStart || starting}
+              disabled={!canStart || starting || !gameMode}
               size="lg"
               className="w-full gap-2"
             >
@@ -642,7 +761,7 @@ export default function TeacherLobbyPage() {
               ) : (
                 <>
                   <Play className="h-5 w-5" />
-                  Iniciar Juego
+                  Iniciar {gameMode === 'mario_party' ? 'Mario Party' : 'Juego'}
                 </>
               )}
             </Button>
@@ -652,12 +771,33 @@ export default function TeacherLobbyPage() {
                 Se necesita al menos 1 jugador
               </p>
             )}
+            {!gameMode && canStart && (
+              <p className="text-sm text-center text-muted-foreground">
+                Selecciona un modo de juego primero
+              </p>
+            )}
           </div>
         </div>
       </div>
 
       {/* Countdown Overlay */}
       <CountdownAnimation countdown={countdown} isVisible={showCountdown} />
+
+      {/* Board Selector Modal */}
+      {showBoardSelector && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl max-w-4xl w-full max-h-[80vh] overflow-y-auto p-6"
+          >
+            <BoardSelector
+              onSelectBoard={handleStartMarioParty}
+              onCancel={() => setShowBoardSelector(false)}
+            />
+          </motion.div>
+        </div>
+      )}
 
       {/* Close Dialog */}
       <AlertDialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>

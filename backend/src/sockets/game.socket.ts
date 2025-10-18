@@ -2,11 +2,17 @@ import { Server as SocketIOServer } from 'socket.io';
 import { AuthenticatedSocket, JoinRoomPayload, PlayerReadyPayload, StartGamePayload, AnswerSubmitPayload } from '../types/socket.types';
 import roomManager from '../services/room.service';
 import gameplayService from '../services/gameplay.service';
+import marioPartyService from '../services/mario-party.service';
+import setupMarioPartyHandlers from './mario-party.socket';
 
 export function setupGameSocketHandlers(io: SocketIOServer) {
   // Configurar RoomManager y GameplayService con IO
   roomManager.setIO(io);
   gameplayService.setIO(io);
+  marioPartyService.setIO(io);
+  
+  // Configurar handlers de Mario Party
+  setupMarioPartyHandlers(io);
 
   io.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`🎮 Game socket connected: ${socket.id}`);

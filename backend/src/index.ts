@@ -11,6 +11,7 @@ import quizRoutes from './routes/quiz.routes';
 import aiConfigRoutes from './routes/aiConfig.routes';
 import aiRoutes from './routes/ai.routes';
 import roomRoutes from './routes/room.routes';
+import boardsRoutes from './routes/boards.routes';
 import { setupSocketIO } from './config/socket';
 import { setupGameSocketHandlers } from './sockets/game.socket';
 
@@ -62,6 +63,7 @@ app.use('/api/quizzes', quizRoutes);
 app.use('/api/ai-config', aiConfigRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/boards', boardsRoutes);
 
 // Ruta especial para estudiantes ver sus clases
 app.use('/api/students', classRoutes);
